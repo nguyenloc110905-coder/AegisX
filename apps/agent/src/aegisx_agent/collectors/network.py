@@ -45,7 +45,11 @@ class NetworkCollector:
                 data.update({"remote_ip": remote_ip, "remote_port": remote_port})
             observations.append(
                 Observation(
-                    event_type="network.listener" if is_listener else "network.connection",
+                    event_type=(
+                        "network.listener_observed"
+                        if is_listener
+                        else "network.connection_observed"
+                    ),
                     source=self.source,
                     data=data,
                 )

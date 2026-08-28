@@ -1,9 +1,18 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from aegisx_api.api.router import router
 from aegisx_api.config import Settings, get_settings
 from aegisx_api.db.session import create_engine, create_session_factory
 from aegisx_api.logging import configure_logging
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await app.state.engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -13,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title=resolved_settings.api_title,
         version=resolved_settings.api_version,
+        lifespan=lifespan,
     )
     app.state.settings = resolved_settings
     app.state.engine = create_engine(resolved_settings)

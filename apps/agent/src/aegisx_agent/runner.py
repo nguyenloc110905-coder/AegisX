@@ -99,7 +99,10 @@ async def collect_once(
     try:
         resolved_collectors = collectors or [
             SystemCollector(),
-            ProcessCollector(max_processes=settings.max_processes),
+            ProcessCollector(
+                max_processes=settings.max_processes,
+                state_path=settings.state_directory / "process-state.json",
+            ),
             NetworkCollector(max_connections=settings.max_network_connections),
         ]
         events = [

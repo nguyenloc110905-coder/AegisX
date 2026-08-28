@@ -68,12 +68,12 @@ class SystemStatusEvent(EventEnvelope):
 
 
 class NetworkListenerEvent(EventEnvelope):
-    event_type: Literal["network.listener"]
+    event_type: Literal["network.listener_observed"]
     data: NetworkListenerData
 
 
 class NetworkConnectionEvent(EventEnvelope):
-    event_type: Literal["network.connection"]
+    event_type: Literal["network.connection_observed"]
     data: NetworkConnectionData
 
 
@@ -88,7 +88,7 @@ TelemetryEvent = Annotated[
 
 
 class EventBatchRequest(BaseModel):
-    events: list[TelemetryEvent] = Field(min_length=1, max_length=100)
+    events: list[TelemetryEvent] = Field(min_length=1)
 
 
 class EventBatchResponse(BaseModel):

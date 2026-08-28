@@ -122,7 +122,7 @@ async def test_ingestion_accepts_typed_network_listener(app_and_client) -> None:
         "id": event_id,
         "schema_version": 1,
         "timestamp": datetime.now(UTC).isoformat(),
-        "event_type": "network.listener",
+        "event_type": "network.listener_observed",
         "source": "network_collector",
         "severity_hint": "normal",
         "data": {
@@ -146,3 +146,33 @@ async def test_ingestion_accepts_typed_network_listener(app_and_client) -> None:
         stored = await session.scalar(select(Event).where(Event.id == UUID(event_id)))
     assert stored is not None
     assert stored.local_port == 8080
+
+
+@pytest.mark.asyncio
+async def test_ingestion_enforces_configured_batch_limit(tmp_path: Path) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'batch-limit.db'}",
+        telemetry_batch_limit=1,
+    )
+    app = create_app(settings)
+    async with app.state.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        token = await register(client)
+        response = await client.post(
+            "/api/v1/telemetry/events",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "events": [
+                    process_started_event(str(uuid4())),
+                    process_started_event(str(uuid4())),
+                ]
+            },
+        )
+    await app.state.engine.dispose()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "telemetry_batch_too_large", "limit": 1}

@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -43,34 +44,47 @@ def process_info(pid: int, command_line: list[str] | None = None) -> dict[str, A
     }
 
 
-def test_process_collector_emits_lifecycle_and_resource_events() -> None:
-    collector = ProcessCollector(process_iter=iterator([FakeProcess(process_info(42))]))
+def test_process_collector_baselines_then_emits_only_new_processes(tmp_path: Path) -> None:
+    processes = [FakeProcess(process_info(42))]
+    collector = ProcessCollector(
+        process_iter=iterator(processes), state_path=tmp_path / "process-state.json"
+    )
 
-    events = collector.collect()
+    baseline = collector.collect()
+    restarted_collector = ProcessCollector(
+        process_iter=iterator(processes), state_path=tmp_path / "process-state.json"
+    )
+    unchanged = restarted_collector.collect()
+    processes.append(FakeProcess(process_info(43)))
+    changed = restarted_collector.collect()
 
-    assert [event.event_type for event in events] == [
+    assert [event.event_type for event in baseline] == ["process.resource_usage"]
+    assert [event.event_type for event in unchanged] == ["process.resource_usage"]
+    assert [event.event_type for event in changed] == [
+        "process.resource_usage",
         "process.started",
         "process.resource_usage",
     ]
-    assert events[0].data["pid"] == 42
-    assert events[0].data["command_line"] == ["python3", "demo.py"]
-    assert events[1].data == {"pid": 42, "cpu_percent": 12.5, "memory_bytes": 4096}
+    assert changed[1].data["pid"] == 43
+    assert changed[1].data["command_line"] == ["python3", "demo.py"]
 
 
-def test_process_collector_skips_inaccessible_and_vanished_processes() -> None:
+def test_process_collector_skips_inaccessible_and_vanished_processes(tmp_path: Path) -> None:
     processes = [
         FakeProcess(error=psutil.AccessDenied(pid=1)),
         FakeProcess(error=psutil.NoSuchProcess(pid=2)),
         FakeProcess(process_info(3)),
     ]
 
-    events = ProcessCollector(process_iter=iterator(processes)).collect()
+    events = ProcessCollector(
+        process_iter=iterator(processes), state_path=tmp_path / "process-state.json"
+    ).collect()
 
-    assert len(events) == 2
+    assert len(events) == 1
     assert all(event.data["pid"] == 3 for event in events)
 
 
-def test_process_collector_bounds_processes_and_command_line() -> None:
+def test_process_collector_bounds_processes_and_command_line(tmp_path: Path) -> None:
     long_command = ["x" * 200 for _ in range(100)]
     processes = [FakeProcess(process_info(pid, long_command)) for pid in range(1, 5)]
     collector = ProcessCollector(
@@ -78,12 +92,15 @@ def test_process_collector_bounds_processes_and_command_line() -> None:
         max_processes=2,
         max_command_args=3,
         max_command_chars=128,
+        state_path=tmp_path / "process-state.json",
     )
 
+    collector.collect()
+    processes[:] = [processes[0], FakeProcess(process_info(99, long_command))]
     events = collector.collect()
 
     lifecycle = [event for event in events if event.event_type == "process.started"]
-    assert len(lifecycle) == 2
+    assert len(lifecycle) == 1
     assert all(len(event.data["command_line"]) <= 3 for event in lifecycle)
     assert all(
         sum(len(argument) for argument in event.data["command_line"]) <= 128 for event in lifecycle

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,16 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 )
 async def ingest_events(
     payload: EventBatchRequest,
+    request: Request,
     device: Annotated[Device, Depends(get_current_device)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> EventBatchResponse:
+    batch_limit = request.app.state.settings.telemetry_batch_limit
+    if len(payload.events) > batch_limit:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "telemetry_batch_too_large", "limit": batch_limit},
+        )
     event_ids = [event.id for event in payload.events]
     existing_ids = set(
         (await session.scalars(select(Event.id).where(Event.id.in_(event_ids)))).all()

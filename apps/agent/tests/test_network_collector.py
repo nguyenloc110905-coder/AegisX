@@ -23,8 +23,8 @@ def test_network_collector_emits_listener_and_connection() -> None:
     events = NetworkCollector(net_connections=lambda kind: entries).collect()
 
     assert [event.event_type for event in events] == [
-        "network.listener",
-        "network.connection",
+        "network.listener_observed",
+        "network.connection_observed",
     ]
     assert events[0].data["local_port"] == 8080
     assert events[0].data["pid"] == 42
@@ -42,7 +42,7 @@ def test_network_collector_handles_udp_missing_pid_and_bounds() -> None:
     events = NetworkCollector(net_connections=lambda kind: entries, max_connections=2).collect()
 
     assert len(events) == 2
-    assert all(event.event_type == "network.listener" for event in events)
+    assert all(event.event_type == "network.listener_observed" for event in events)
     assert all(event.data["pid"] is None for event in events)
     assert all(event.data["protocol"] == "udp" for event in events)
 

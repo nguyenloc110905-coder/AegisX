@@ -98,7 +98,7 @@ Status: complete.
 
 - Agent suite — 9 passed; Ruff and mypy passed on 12 source files.
 - Real one-shot run — accepted 81 events in 478 ms without root.
-- PostgreSQL verification — 40 `process.started`, 40 `process.resource_usage`, and one `system.status` event for the demo device.
+- Pre-alignment PostgreSQL verification — 40 legacy snapshot events then named `process.started`, 40 `process.resource_usage`, and one `system.status` event for the demo device.
 - Agent suite after outbox work — 13 passed; Ruff and mypy passed on 13 source files.
 - Real offline recovery — API down queued 81 events; API recovery flushed 162 old/new events and left zero queued. PostgreSQL contained 80 lifecycle, 80 resource, and two system events.
 - Final agent suite — 22 passed; Ruff formatting/lint and mypy passed on 15 source files.
@@ -127,7 +127,7 @@ Status: complete.
 - Agent suite — 25 passed; Ruff and mypy passed on 16 source files.
 - API suite — 13 passed; Ruff and mypy passed on 20 source files.
 - PostgreSQL migration reached `0002_network_fields` and exposed all six promoted network columns.
-- Local listener demo — Python HTTP server on `127.0.0.1:8765` was observed as TCP `network.listener` with the correct PID and LISTEN state.
+- Pre-alignment local listener demo — Python HTTP server on `127.0.0.1:8765` was observed under the former `network.listener` name with the correct PID and LISTEN state.
 
 ### Known limitations
 
@@ -136,4 +136,27 @@ Status: complete.
 
 ### Next milestone
 
-Milestone 4 — Detection Engine: modular rule registry, centralized scoring, initial explainable process/network signals, persistence, and tests including benign comparisons.
+Alignment Patch — required before Milestone 4.
+
+## Alignment Patch
+
+Status: complete. Milestone 4 has not begun.
+
+### Completed work
+
+- Persisted a private process baseline keyed by `(PID, create_time)`; the initial scan creates only a baseline and later scans emit `process.started` solely for newly observed identities.
+- Renamed socket snapshot evidence to `network.listener_observed` and `network.connection_observed`; no opened/closed transition is claimed.
+- Made `telemetry_batch_limit` the authoritative runtime ingestion bound instead of retaining a contradictory schema constant.
+- Added FastAPI shutdown disposal for async database engine resources.
+- Added an automated PostgreSQL integration test covering real Device registration, authenticated Event ingestion, typed/promoted persistence, and cleanup.
+- Retained SQLite tests for fast isolation while adding dialect-level PostgreSQL coverage.
+
+### Verification
+
+- PostgreSQL Alembic upgrade reached head through the asyncpg/PostgreSQL path.
+- PostgreSQL Device/Event integration test passed against the healthy Compose service.
+- Full test, Ruff, mypy, migration, and integration results are recorded in the completion report for this patch.
+
+### Next milestone
+
+Milestone 4 — Detection Engine. It remains intentionally unstarted until this patch is reviewed.
