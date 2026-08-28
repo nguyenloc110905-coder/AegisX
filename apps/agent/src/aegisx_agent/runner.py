@@ -6,7 +6,13 @@ from typing import Literal, Protocol
 import httpx
 from pydantic import BaseModel
 
-from aegisx_agent.api_client import AegisXClient, DeviceProfile, IngestionResult
+from aegisx_agent.api_client import (
+    AegisXClient,
+    DeviceProfile,
+    IngestionResult,
+    PermanentDeliveryError,
+    TransientDeliveryError,
+)
 from aegisx_agent.collectors.base import Collector
 from aegisx_agent.collectors.process import ProcessCollector
 from aegisx_agent.collectors.system import SystemCollector
@@ -22,15 +28,38 @@ class RunResult(BaseModel):
     duplicates: int
     queued: int
     evicted: int
+    quarantined: int
     delivery_status: Literal["delivered", "deferred"]
 
 
 class TelemetryClient(Protocol):
     async def register(self, profile: DeviceProfile) -> AgentCredentials: ...
 
-    async def send_events(
-        self, token: str, events: list[NormalizedEvent]
-    ) -> IngestionResult: ...
+    async def send_events(self, token: str, events: list[NormalizedEvent]) -> IngestionResult: ...
+
+
+async def _deliver_batch(
+    client: TelemetryClient,
+    token: str,
+    outbox: Outbox,
+    batch: list[NormalizedEvent],
+) -> tuple[int, int, int]:
+    try:
+        result = await client.send_events(token, batch)
+    except PermanentDeliveryError as error:
+        if error.status_code in {401, 403}:
+            raise
+        if len(batch) > 1:
+            midpoint = len(batch) // 2
+            left = await _deliver_batch(client, token, outbox, batch[:midpoint])
+            right = await _deliver_batch(client, token, outbox, batch[midpoint:])
+            return left[0] + right[0], left[1] + right[1], left[2] + right[2]
+        outbox.quarantine([batch[0].id], reason=f"http_{error.status_code}")
+        return 0, 0, 1
+    if result.accepted + result.duplicates != len(batch):
+        raise RuntimeError("backend did not account for the complete event batch")
+    outbox.acknowledge([event.id for event in batch])
+    return result.accepted, result.duplicates, 0
 
 
 def _device_profile(external_id: str) -> DeviceProfile:
@@ -79,23 +108,23 @@ async def collect_once(
         evicted = outbox.enqueue(events)
         accepted = 0
         duplicates = 0
+        quarantined = 0
         try:
             if credentials is None:
                 credentials = await resolved_client.register(_device_profile(identity.external_id))
                 save_credentials(credentials_path, credentials)
             while batch := outbox.peek(settings.batch_size):
-                result = await resolved_client.send_events(credentials.token, batch)
-                if result.accepted + result.duplicates != len(batch):
-                    raise RuntimeError("backend did not account for the complete event batch")
-                outbox.acknowledge([event.id for event in batch])
-                accepted += result.accepted
-                duplicates += result.duplicates
-        except (httpx.TransportError, httpx.TimeoutException):
+                delivered = await _deliver_batch(resolved_client, credentials.token, outbox, batch)
+                accepted += delivered[0]
+                duplicates += delivered[1]
+                quarantined += delivered[2]
+        except (httpx.TransportError, httpx.TimeoutException, TransientDeliveryError):
             return RunResult(
                 accepted=accepted,
                 duplicates=duplicates,
                 queued=outbox.count(),
                 evicted=evicted,
+                quarantined=quarantined,
                 delivery_status="deferred",
             )
         return RunResult(
@@ -103,6 +132,7 @@ async def collect_once(
             duplicates=duplicates,
             queued=outbox.count(),
             evicted=evicted,
+            quarantined=quarantined,
             delivery_status="delivered",
         )
     finally:

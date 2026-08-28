@@ -3,7 +3,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from aegisx_agent.api_client import DeviceProfile, IngestionResult
+from aegisx_agent.api_client import DeviceProfile, IngestionResult, PermanentDeliveryError
 from aegisx_agent.config import AgentSettings
 from aegisx_agent.credentials import AgentCredentials
 from aegisx_agent.events import Observation
@@ -31,6 +31,7 @@ class FakeClient:
         self.registered = 0
         self.sent = 0
         self.fail_delivery = False
+        self.permanent_failure = False
 
     async def register(self, profile: DeviceProfile) -> AgentCredentials:
         self.registered += 1
@@ -40,6 +41,8 @@ class FakeClient:
         assert token == "test-token"
         if self.fail_delivery:
             raise httpx.ConnectError("API offline")
+        if self.permanent_failure:
+            raise PermanentDeliveryError(422)
         self.sent += len(events)
         return IngestionResult(accepted=len(events), duplicates=0)
 
@@ -89,3 +92,21 @@ async def test_collect_once_retains_offline_events_and_flushes_later(tmp_path: P
     assert recovered.delivery_status == "delivered"
     assert recovered.accepted == 2
     assert recovered.queued == 0
+
+
+@pytest.mark.asyncio
+async def test_collect_once_quarantines_permanently_invalid_event(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        _env_file=None,
+        state_directory=tmp_path,
+        api_url="http://test",
+        max_outbox_events=100,
+    )
+    client = FakeClient()
+    client.permanent_failure = True
+
+    result = await collect_once(settings, client=client, collectors=[FakeCollector()])
+
+    assert result.delivery_status == "delivered"
+    assert result.queued == 0
+    assert result.quarantined == 1

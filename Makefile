@@ -6,7 +6,7 @@ COMPOSE := $(CONTAINER_COMPOSE) --env-file $(ENV_FILE)
 
 UV ?= $(HOME)/.local/bin/uv
 
-.PHONY: check compose-config db-up db-down db-logs api-sync api-test api-lint api-type api-migrate api-run agent-sync agent-test agent-lint agent-type agent-once
+.PHONY: check compose-config db-up db-down db-logs api-sync api-test api-lint api-type api-migrate api-run agent-sync agent-test agent-lint agent-type agent-once agent-run
 
 check:
 	sh scripts/check-foundation.sh
@@ -57,3 +57,6 @@ agent-type:
 
 agent-once:
 	$(UV) run --project apps/agent aegisx-agent collect-once
+
+agent-run:
+	$(UV) run --project apps/agent aegisx-agent run

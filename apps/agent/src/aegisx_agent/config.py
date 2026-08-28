@@ -24,3 +24,5 @@ class AgentSettings(BaseSettings):
     batch_size: int = Field(default=100, ge=1, le=100)
     max_outbox_events: int = Field(default=10_000, ge=100, le=1_000_000)
     request_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    collection_interval_seconds: float = Field(default=30.0, ge=5, le=3600)
+    max_backoff_seconds: float = Field(default=300.0, ge=5, le=3600)

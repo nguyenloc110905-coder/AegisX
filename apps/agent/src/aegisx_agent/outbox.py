@@ -24,6 +24,17 @@ class Outbox:
             )
             """
         )
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quarantined_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE,
+                payload TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                quarantined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         self._connection.commit()
 
     def enqueue(self, events: list[NormalizedEvent]) -> int:
@@ -62,9 +73,51 @@ class Outbox:
         )
         self._connection.commit()
 
+    def quarantine(self, event_ids: list[str], reason: str) -> None:
+        if not event_ids:
+            return
+        placeholders = ",".join("?" for _ in event_ids)
+        rows = self._connection.execute(
+            f"SELECT event_id, payload FROM pending_events WHERE event_id IN ({placeholders})",  # noqa: S608
+            event_ids,
+        ).fetchall()
+        self._connection.executemany(
+            """
+            INSERT OR REPLACE INTO quarantined_events (event_id, payload, reason)
+            VALUES (?, ?, ?)
+            """,
+            [(row[0], row[1], reason) for row in rows],
+        )
+        self._connection.execute(
+            f"DELETE FROM pending_events WHERE event_id IN ({placeholders})",  # noqa: S608
+            event_ids,
+        )
+        excess = max(0, self.quarantine_count() - self._max_events)
+        if excess:
+            self._connection.execute(
+                """
+                DELETE FROM quarantined_events
+                WHERE sequence IN (
+                    SELECT sequence FROM quarantined_events ORDER BY sequence LIMIT ?
+                )
+                """,
+                (excess,),
+            )
+        self._connection.commit()
+
     def count(self) -> int:
         row = self._connection.execute("SELECT COUNT(*) FROM pending_events").fetchone()
         return int(row[0]) if row else 0
+
+    def quarantine_count(self) -> int:
+        row = self._connection.execute("SELECT COUNT(*) FROM quarantined_events").fetchone()
+        return int(row[0]) if row else 0
+
+    def quarantine_reasons(self) -> list[str]:
+        rows = self._connection.execute(
+            "SELECT reason FROM quarantined_events ORDER BY sequence"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def close(self) -> None:
         self._connection.close()

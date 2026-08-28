@@ -57,3 +57,16 @@ def test_outbox_acknowledges_delivered_events(tmp_path: Path) -> None:
 
     assert [item.id for item in outbox.peek(10)] == [events[1].id]
     outbox.close()
+
+
+def test_outbox_quarantines_permanently_invalid_events(tmp_path: Path) -> None:
+    outbox = Outbox(tmp_path / "outbox.sqlite3", max_events=10)
+    invalid = event("00000000-0000-0000-0000-000000000001")
+    outbox.enqueue([invalid])
+
+    outbox.quarantine([invalid.id], reason="http_422")
+
+    assert outbox.count() == 0
+    assert outbox.quarantine_count() == 1
+    assert outbox.quarantine_reasons() == ["http_422"]
+    outbox.close()

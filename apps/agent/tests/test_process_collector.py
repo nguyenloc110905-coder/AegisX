@@ -86,6 +86,5 @@ def test_process_collector_bounds_processes_and_command_line() -> None:
     assert len(lifecycle) == 2
     assert all(len(event.data["command_line"]) <= 3 for event in lifecycle)
     assert all(
-        sum(len(argument) for argument in event.data["command_line"]) <= 128
-        for event in lifecycle
+        sum(len(argument) for argument in event.data["command_line"]) <= 128 for event in lifecycle
     )

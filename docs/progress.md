@@ -83,7 +83,7 @@ Status: incorporated into documentation and deferred to dependency-appropriate m
 
 ## Milestone 2 — Linux Agent Foundation
 
-Status: in progress.
+Status: complete.
 
 ### Completed work
 
@@ -91,6 +91,7 @@ Status: in progress.
 - Real Linux SystemCollector and bounded ProcessCollector behind collector interfaces.
 - API registration/client, event normalization, batching, and `collect-once` CLI.
 - Private bounded SQLite outbox with queue-first delivery and offline recovery.
+- HTTP error classification, single-event quarantine isolation, structured cycle logs, and bounded periodic backoff.
 - Root Make targets for agent sync, tests, lint, typing, and one-shot execution.
 
 ### Tests executed
@@ -100,9 +101,12 @@ Status: in progress.
 - PostgreSQL verification — 40 `process.started`, 40 `process.resource_usage`, and one `system.status` event for the demo device.
 - Agent suite after outbox work — 13 passed; Ruff and mypy passed on 13 source files.
 - Real offline recovery — API down queued 81 events; API recovery flushed 162 old/new events and left zero queued. PostgreSQL contained 80 lifecycle, 80 resource, and two system events.
+- Final agent suite — 22 passed; Ruff formatting/lint and mypy passed on 15 source files.
 
 ### Remaining work
 
-- Periodic retry/backoff and permanent-error quarantine.
-- Operational structured logging and periodic/background lifecycle.
-- Final Milestone 2 runtime/resource verification and synchronized root documentation.
+Milestone 2 has no remaining definition-of-done work. Packaging a systemd unit remains later hardening work.
+
+### Next milestone
+
+Milestone 3 — Network Telemetry: active connections, listening sockets, process association where available, normalized persistence, and a local-listener demonstration.

@@ -7,6 +7,20 @@ from aegisx_agent.credentials import AgentCredentials
 from aegisx_agent.events import NormalizedEvent
 
 
+class DeliveryError(Exception):
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__(f"telemetry delivery failed with HTTP {status_code}")
+
+
+class TransientDeliveryError(DeliveryError):
+    pass
+
+
+class PermanentDeliveryError(DeliveryError):
+    pass
+
+
 class DeviceProfile(BaseModel):
     external_id: str
     name: str
@@ -53,7 +67,10 @@ class AegisXClient:
             headers={"Authorization": f"Bearer {token}"},
             json={"events": [event.model_dump(mode="json") for event in events]},
         )
-        response.raise_for_status()
+        if response.status_code == 429 or response.status_code >= 500:
+            raise TransientDeliveryError(response.status_code)
+        if response.is_error:
+            raise PermanentDeliveryError(response.status_code)
         return IngestionResult.model_validate(response.json())
 
     async def close(self) -> None:
