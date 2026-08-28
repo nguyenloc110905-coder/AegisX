@@ -49,6 +49,7 @@ Status: in progress.
 - Added the Python 3.12 `uv` project, validated settings, structured logging, FastAPI factory, and liveness endpoint.
 - Added async SQLAlchemy infrastructure plus Device and Event models with evidence and correlation fields.
 - Added the explicit `0001_device_event` Alembic migration; application code does not use `create_all()`.
+- Added database readiness and Linux device registration with one-time opaque tokens; only token digests are persisted.
 
 ### Tests executed
 
@@ -57,10 +58,11 @@ Status: in progress.
 - mypy — passed on 13 source files.
 - PostgreSQL Alembic `upgrade head`, `downgrade base`, and second `upgrade head` — passed.
 - PostgreSQL inspection — confirmed `alembic_version`, `devices`, and `events` tables.
+- Full suite after registration work — 9 passed; Ruff and mypy passed on 18 source files.
+- Runtime curl smoke — liveness returned `ok`, readiness returned `ready`, registration returned 201, and PostgreSQL contained the registered device.
 
 ### Remaining work
 
-- Database readiness endpoint and session dependency.
-- Device registration and token authentication.
+- Bearer token authentication dependency.
 - Typed, bounded, idempotent telemetry ingestion.
 - Full HTTP/PostgreSQL runtime verification and synchronized API documentation.

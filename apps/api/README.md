@@ -2,4 +2,4 @@
 
 The API will own device registration, validated telemetry ingestion, persistence, deterministic detection, incident correlation, realtime updates, and read-only AI investigation.
 
-It will not collect host telemetry or render the user interface. Executable backend code begins in Milestone 1; this directory is documentation-only in Milestone 0.
+It does not collect host telemetry or render the user interface. Milestone 1 currently implements liveness/readiness and Linux device registration. Run it with `~/.local/bin/uv run uvicorn aegisx_api.main:app --reload` after applying Alembic migrations.

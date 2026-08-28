@@ -1,5 +1,11 @@
 # API
 
-Status: planned from Milestone 1; no HTTP endpoint exists yet.
+Status: Milestone 1 in progress.
 
-The FastAPI application will expose health/readiness, authenticated device management, validated batched telemetry ingestion, incident queries, AI analysis operations, and WebSocket updates. PostgreSQL access will use SQLAlchemy async and Alembic migrations. Stable validation errors must not expose secrets or stack traces.
+Implemented endpoints:
+
+- `GET /health/live` checks the API process without requiring PostgreSQL.
+- `GET /health/ready` executes `SELECT 1` and returns 503 when PostgreSQL is unavailable.
+- `POST /api/v1/devices/register` accepts a bounded Linux device profile and returns the device plus a one-time opaque token. Only the SHA-256 token digest is stored. Reusing an external device ID returns 409.
+
+Authenticated telemetry ingestion, incident queries, AI analysis, and WebSocket updates remain planned. PostgreSQL access uses SQLAlchemy async and explicit Alembic migrations.
