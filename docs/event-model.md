@@ -1,5 +1,11 @@
 # Event Model
 
-Status: planned for Milestones 1-3; no event schema is executable yet.
+Status: schema version 1 implemented for initial process and system telemetry.
 
-Every normalized event will contain `id`, `schema_version`, `device_id`, `timestamp`, `event_type`, `source`, `severity_hint`, typed `data`, and bounded `metadata`. Explicit event types and Pydantic payload models will prevent the database from becoming an arbitrary JSON dump. Searchable correlation keys will be promoted to indexed relational columns when their use is implemented.
+Every normalized request event contains `id`, `schema_version`, `timestamp`, `event_type`, `source`, `severity_hint`, typed `data`, and bounded `metadata`; the authenticated device supplies `device_id`. Pydantic discriminates payloads by explicit event type. The database promotes PID, PPID, executable, device, type, and timestamp for correlation and stores the remaining validated payload as JSON.
+
+Implemented version 1 payloads:
+
+- `process.started`: PID, PPID, name, optional executable/user/start time, and bounded command-line arguments.
+- `process.resource_usage`: PID, non-negative CPU percentage, and non-negative memory bytes.
+- `system.status`: hostname, OS, kernel, uptime, CPU count, and total memory.

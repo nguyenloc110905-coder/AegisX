@@ -27,7 +27,7 @@ scripts/        Repository checks and later safe validation helpers
 
 ## Current implementation
 
-Milestone 0 is implemented: repository policies, documented application boundaries, a PostgreSQL 17 Compose service, foundation validation, and initial project documentation. No telemetry collection, API endpoints, detection logic, UI, AI integration, or validation scenarios exist yet.
+Milestones 0 and 1 are implemented: repository foundation, PostgreSQL 17, FastAPI health/readiness, device registration with token authentication, and typed idempotent telemetry ingestion. Endpoint collection, detection, correlation, UI, AI integration, and validation scenarios do not exist yet.
 
 See [progress](docs/progress.md) for verification evidence and known limitations.
 

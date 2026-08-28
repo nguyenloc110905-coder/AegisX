@@ -4,7 +4,9 @@ ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 CONTAINER_COMPOSE ?= docker compose
 COMPOSE := $(CONTAINER_COMPOSE) --env-file $(ENV_FILE)
 
-.PHONY: check compose-config db-up db-down db-logs
+UV ?= $(HOME)/.local/bin/uv
+
+.PHONY: check compose-config db-up db-down db-logs api-sync api-test api-lint api-type api-migrate api-run
 
 check:
 	sh scripts/check-foundation.sh
@@ -22,3 +24,21 @@ db-down:
 
 db-logs:
 	$(COMPOSE) logs -f postgres
+
+api-sync:
+	$(UV) sync --project apps/api --all-groups
+
+api-test:
+	$(UV) run --project apps/api pytest apps/api/tests
+
+api-lint:
+	$(UV) run --project apps/api ruff check apps/api/src apps/api/tests
+
+api-type:
+	cd apps/api && $(UV) run mypy
+
+api-migrate:
+	$(UV) run --project apps/api alembic -c apps/api/alembic.ini upgrade head
+
+api-run:
+	cd apps/api && $(UV) run uvicorn aegisx_api.main:app --host 127.0.0.1 --port 8000 --reload

@@ -42,7 +42,7 @@ Milestone 1 — Backend Foundation: FastAPI configuration and logging, health/re
 
 ## Milestone 1 — Backend Foundation
 
-Status: in progress.
+Status: complete.
 
 ### Completed work
 
@@ -50,6 +50,7 @@ Status: in progress.
 - Added async SQLAlchemy infrastructure plus Device and Event models with evidence and correlation fields.
 - Added the explicit `0001_device_event` Alembic migration; application code does not use `create_all()`.
 - Added database readiness and Linux device registration with one-time opaque tokens; only token digests are persisted.
+- Added bearer device authentication and typed batch ingestion for initial process/system events with UUID idempotency.
 
 ### Tests executed
 
@@ -60,9 +61,13 @@ Status: in progress.
 - PostgreSQL inspection — confirmed `alembic_version`, `devices`, and `events` tables.
 - Full suite after registration work — 9 passed; Ruff and mypy passed on 18 source files.
 - Runtime curl smoke — liveness returned `ok`, readiness returned `ready`, registration returned 201, and PostgreSQL contained the registered device.
+- Full suite after ingestion work — 12 passed; Ruff and mypy passed on 20 source files.
+- Runtime ingestion smoke — first submission returned `accepted=1`, identical retry returned `duplicates=1`, and PostgreSQL contained one event with promoted PID and executable fields.
 
 ### Remaining work
 
-- Bearer token authentication dependency.
-- Typed, bounded, idempotent telemetry ingestion.
-- Full HTTP/PostgreSQL runtime verification and synchronized API documentation.
+Milestone 1 has no remaining definition-of-done work. API container packaging and production transport/authentication hardening remain later cross-cutting work.
+
+### Next milestone
+
+Milestone 2 — Linux Agent Foundation: device identity, API client, ProcessCollector, SystemCollector, normalization, bounded delivery, logging, and tests.
