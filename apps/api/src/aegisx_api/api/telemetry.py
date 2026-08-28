@@ -52,6 +52,12 @@ async def ingest_events(
                 process_id=data.get("pid"),
                 parent_process_id=data.get("ppid"),
                 executable=data.get("executable"),
+                local_ip=data.get("local_ip"),
+                local_port=data.get("local_port"),
+                remote_ip=data.get("remote_ip"),
+                remote_port=data.get("remote_port"),
+                protocol=data.get("protocol"),
+                connection_state=data.get("state"),
             )
         )
         accepted += 1

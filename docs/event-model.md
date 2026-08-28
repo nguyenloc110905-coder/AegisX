@@ -9,3 +9,5 @@ Implemented version 1 payloads:
 - `process.started`: PID, PPID, name, optional executable/user/start time, and bounded command-line arguments.
 - `process.resource_usage`: PID, non-negative CPU percentage, and non-negative memory bytes.
 - `system.status`: hostname, OS, kernel, uptime, CPU count, and total memory.
+- `network.listener`: optional PID, local IP/port, TCP or UDP protocol, and socket state.
+- `network.connection`: listener fields plus required remote IP/port.

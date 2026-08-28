@@ -110,3 +110,30 @@ Milestone 2 has no remaining definition-of-done work. Packaging a systemd unit r
 ### Next milestone
 
 Milestone 3 — Network Telemetry: active connections, listening sockets, process association where available, normalized persistence, and a local-listener demonstration.
+
+## Milestone 3 — Network Telemetry
+
+Status: complete.
+
+### Completed work
+
+- Added bounded psutil NetworkCollector for TCP/UDP listeners and active connections.
+- Added typed API schemas plus promoted/indexed local/remote address, port, protocol, state, and PID fields.
+- Added and applied Alembic migration `0002_network_fields`.
+- Included network telemetry in one-shot and continuous agent collection.
+
+### Tests executed
+
+- Agent suite — 25 passed; Ruff and mypy passed on 16 source files.
+- API suite — 13 passed; Ruff and mypy passed on 20 source files.
+- PostgreSQL migration reached `0002_network_fields` and exposed all six promoted network columns.
+- Local listener demo — Python HTTP server on `127.0.0.1:8765` was observed as TCP `network.listener` with the correct PID and LISTEN state.
+
+### Known limitations
+
+- PID association depends on OS visibility and may be unavailable without additional privileges.
+- This milestone collects socket state snapshots; packet capture and DNS telemetry are intentionally excluded.
+
+### Next milestone
+
+Milestone 4 — Detection Engine: modular rule registry, centralized scoring, initial explainable process/network signals, persistence, and tests including benign comparisons.

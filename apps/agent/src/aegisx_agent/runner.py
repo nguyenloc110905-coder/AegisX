@@ -14,6 +14,7 @@ from aegisx_agent.api_client import (
     TransientDeliveryError,
 )
 from aegisx_agent.collectors.base import Collector
+from aegisx_agent.collectors.network import NetworkCollector
 from aegisx_agent.collectors.process import ProcessCollector
 from aegisx_agent.collectors.system import SystemCollector
 from aegisx_agent.config import AgentSettings
@@ -99,6 +100,7 @@ async def collect_once(
         resolved_collectors = collectors or [
             SystemCollector(),
             ProcessCollector(max_processes=settings.max_processes),
+            NetworkCollector(max_connections=settings.max_network_connections),
         ]
         events = [
             normalize_observation(observation)

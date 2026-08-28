@@ -27,7 +27,7 @@ scripts/        Repository checks and later safe validation helpers
 
 ## Current implementation
 
-Milestones 0-2 are implemented: repository foundation, PostgreSQL 17, FastAPI ingestion, and a Linux agent with real process/system collection, private identity, bounded offline buffering, and periodic retry. Network collection, detection, correlation, UI, AI integration, and validation scenarios do not exist yet.
+Milestones 0-3 are implemented: repository foundation, PostgreSQL 17, typed FastAPI ingestion, and a Linux agent with real process/system/network collection, private identity, bounded offline buffering, and periodic retry. Detection, correlation, UI, AI integration, and validation scenarios do not exist yet.
 
 See [progress](docs/progress.md) for verification evidence and known limitations.
 

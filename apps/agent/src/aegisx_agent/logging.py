@@ -5,6 +5,8 @@ import structlog
 
 def configure_logging(level: str = "INFO") -> None:
     logging.basicConfig(format="%(message)s", level=level, force=True)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,

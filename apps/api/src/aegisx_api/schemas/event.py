@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, IPvAnyAddress
 
 
 class ProcessStartedData(BaseModel):
@@ -30,6 +30,19 @@ class SystemStatusData(BaseModel):
     memory_total_bytes: int = Field(gt=0)
 
 
+class NetworkListenerData(BaseModel):
+    pid: int | None = Field(default=None, gt=0)
+    local_ip: IPvAnyAddress
+    local_port: int = Field(ge=0, le=65535)
+    protocol: Literal["tcp", "udp"]
+    state: str = Field(min_length=1, max_length=32)
+
+
+class NetworkConnectionData(NetworkListenerData):
+    remote_ip: IPvAnyAddress
+    remote_port: int = Field(ge=0, le=65535)
+
+
 class EventEnvelope(BaseModel):
     id: UUID
     schema_version: Literal[1]
@@ -54,8 +67,22 @@ class SystemStatusEvent(EventEnvelope):
     data: SystemStatusData
 
 
+class NetworkListenerEvent(EventEnvelope):
+    event_type: Literal["network.listener"]
+    data: NetworkListenerData
+
+
+class NetworkConnectionEvent(EventEnvelope):
+    event_type: Literal["network.connection"]
+    data: NetworkConnectionData
+
+
 TelemetryEvent = Annotated[
-    ProcessStartedEvent | ProcessResourceUsageEvent | SystemStatusEvent,
+    ProcessStartedEvent
+    | ProcessResourceUsageEvent
+    | SystemStatusEvent
+    | NetworkListenerEvent
+    | NetworkConnectionEvent,
     Field(discriminator="event_type"),
 ]
 

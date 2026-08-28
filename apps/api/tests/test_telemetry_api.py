@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -111,3 +111,38 @@ async def test_ingestion_rejects_payload_for_wrong_event_type(app_and_client) ->
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingestion_accepts_typed_network_listener(app_and_client) -> None:
+    app, client = app_and_client
+    token = await register(client)
+    event_id = str(uuid4())
+    event = {
+        "id": event_id,
+        "schema_version": 1,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "event_type": "network.listener",
+        "source": "network_collector",
+        "severity_hint": "normal",
+        "data": {
+            "pid": 4242,
+            "local_ip": "127.0.0.1",
+            "local_port": 8080,
+            "protocol": "tcp",
+            "state": "LISTEN",
+        },
+        "metadata": {},
+    }
+
+    response = await client.post(
+        "/api/v1/telemetry/events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"events": [event]},
+    )
+
+    assert response.status_code == 202
+    async with app.state.session_factory() as session:
+        stored = await session.scalar(select(Event).where(Event.id == UUID(event_id)))
+    assert stored is not None
+    assert stored.local_port == 8080
