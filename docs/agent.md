@@ -1,5 +1,7 @@
 # Endpoint Agent
 
-Status: planned from Milestone 2; no agent executable exists yet.
+Status: Milestone 2 in progress; one-shot Linux collection and delivery are implemented.
 
-The Linux agent will run independently of the UI and own stable device identity, configurable collection, normalization, bounded durable delivery, retry, and safe operational logging. OS access will be isolated behind collector interfaces. Permission failures must degrade gracefully, and normal unit tests must not require root access.
+The Linux agent runs independently of the UI. It currently owns stable UUID identity, private token persistence, configurable one-shot collection, normalization, batching, and API delivery. `SystemCollector` reports host/kernel/uptime/CPU/RAM. `ProcessCollector` emits bounded lifecycle and resource observations while skipping process disappearance and permission races.
+
+OS access is isolated behind collector interfaces and normal tests do not require root. Durable outbox/retry, periodic scheduling, operational logging, and systemd lifecycle remain active Milestone 2 work.

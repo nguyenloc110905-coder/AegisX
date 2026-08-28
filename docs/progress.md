@@ -80,3 +80,26 @@ Status: incorporated into documentation and deferred to dependency-appropriate m
 - No existing architecture or completed API work required rework.
 - Detection packs remain intentionally deferred until process/network/file/authentication/Wi-Fi telemetry dependencies exist and Milestones 4-5 are active.
 - Milestone 2 remains active; detection backlog work must not interrupt the Linux agent foundation.
+
+## Milestone 2 — Linux Agent Foundation
+
+Status: in progress.
+
+### Completed work
+
+- Stable device UUID and API credentials persisted with file mode `0600`.
+- Real Linux SystemCollector and bounded ProcessCollector behind collector interfaces.
+- API registration/client, event normalization, batching, and `collect-once` CLI.
+- Root Make targets for agent sync, tests, lint, typing, and one-shot execution.
+
+### Tests executed
+
+- Agent suite — 9 passed; Ruff and mypy passed on 12 source files.
+- Real one-shot run — accepted 81 events in 478 ms without root.
+- PostgreSQL verification — 40 `process.started`, 40 `process.resource_usage`, and one `system.status` event for the demo device.
+
+### Remaining work
+
+- Bounded durable SQLite outbox, retry/backoff, and permanent-error quarantine.
+- Operational structured logging and periodic/background lifecycle.
+- Final Milestone 2 runtime/resource verification and synchronized root documentation.

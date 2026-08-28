@@ -11,8 +11,17 @@ dependencies = [
   "structlog>=24.4,<26",
 ]
 
+[project.scripts]
+aegisx-agent = "aegisx_agent.cli:main"
+
 [dependency-groups]
-dev = ["mypy>=1.14,<2", "pytest>=8.3,<9", "ruff>=0.9,<1", "types-psutil>=7,<8"]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.9,<1",
+  "types-psutil>=7,<8",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -33,7 +42,7 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "UP", "B", "S", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+"tests/**/*.py" = ["S101", "S105", "S106"]
 
 [tool.mypy]
 python_version = "3.12"
