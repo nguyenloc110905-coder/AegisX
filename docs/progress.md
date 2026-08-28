@@ -26,7 +26,7 @@ Status: complete with Docker access limitation documented below.
 ### Known limitations
 
 - Docker runtime commands fail for user `nguyenloc` because `/var/run/docker.sock` is owned by `root:docker` and the user is not a member of `docker`. Rootless Podman was used for successful runtime verification.
-- Git commits are not created because `user.name` and `user.email` are not configured. No identity was fabricated.
+- Git identity is now configured locally and verified commits are pushed to `origin/main`.
 - Application code and production authentication/TLS do not exist in Milestone 0.
 
 ### Technical decisions
@@ -39,3 +39,28 @@ Status: complete with Docker access limitation documented below.
 ### Next milestone
 
 Milestone 1 — Backend Foundation: FastAPI configuration and logging, health/readiness, async SQLAlchemy, Alembic, Device and Event models, validated telemetry ingestion, and tests.
+
+## Milestone 1 — Backend Foundation
+
+Status: in progress.
+
+### Completed work
+
+- Added the Python 3.12 `uv` project, validated settings, structured logging, FastAPI factory, and liveness endpoint.
+- Added async SQLAlchemy infrastructure plus Device and Event models with evidence and correlation fields.
+- Added the explicit `0001_device_event` Alembic migration; application code does not use `create_all()`.
+
+### Tests executed
+
+- `pytest` model and migration tests — 3 passed.
+- Ruff — passed.
+- mypy — passed on 13 source files.
+- PostgreSQL Alembic `upgrade head`, `downgrade base`, and second `upgrade head` — passed.
+- PostgreSQL inspection — confirmed `alembic_version`, `devices`, and `events` tables.
+
+### Remaining work
+
+- Database readiness endpoint and session dependency.
+- Device registration and token authentication.
+- Typed, bounded, idempotent telemetry ingestion.
+- Full HTTP/PostgreSQL runtime verification and synchronized API documentation.
