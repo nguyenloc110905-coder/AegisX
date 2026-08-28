@@ -1,6 +1,6 @@
 # AegisX
 
-AegisX is a lightweight, evidence-first endpoint, network, and Wi-Fi threat-detection and attack-validation platform for authorized Linux labs. It combines deterministic rules, risk scoring, event correlation, and a read-only AI investigator without claiming to be an antivirus, SIEM, or commercial EDR replacement.
+AegisX is an evidence-first endpoint, network, and Wi-Fi security monitoring platform that detects behavioral anomalies, correlates related telemetry into incidents, and uses AI to assist investigation. It is built for authorized Linux labs and is not an antivirus, full SIEM, commercial EDR replacement, or guaranteed malware detector.
 
 ## Evidence-first flow
 
@@ -69,7 +69,7 @@ Replace `docker compose` with `podman compose` when using Podman. Development de
 
 ## Roadmap
 
-The project proceeds sequentially from backend and Linux agent foundations through network telemetry, detection, correlation, minimal UI, realtime notifications, Wi-Fi monitoring, AI investigation, safe validation, and final hardening. The approved platform design is in `docs/superpowers/specs/`.
+The project proceeds sequentially from backend and Linux agent foundations through network telemetry, detection, correlation, minimal UI, realtime notifications, Wi-Fi monitoring, AI investigation, safe validation, and final hardening. Detection-family priorities and false-positive requirements are tracked in [the detection backlog](docs/detection-backlog.md). The approved platform design is in `docs/superpowers/specs/`.
 
 ## Limitations and security assumptions
 

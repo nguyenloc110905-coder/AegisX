@@ -71,3 +71,12 @@ Milestone 1 has no remaining definition-of-done work. API container packaging an
 ### Next milestone
 
 Milestone 2 — Linux Agent Foundation: device identity, API client, ProcessCollector, SystemCollector, normalization, bounded delivery, logging, and tests.
+
+## Detection Requirements Addendum
+
+Status: incorporated into documentation and deferred to dependency-appropriate milestones.
+
+- Added behavior-first detection families, modular pack boundaries, correlation keys, optional ATT&CK metadata, safe validation metrics, and mandatory benign comparison tests.
+- No existing architecture or completed API work required rework.
+- Detection packs remain intentionally deferred until process/network/file/authentication/Wi-Fi telemetry dependencies exist and Milestones 4-5 are active.
+- Milestone 2 remains active; detection backlog work must not interrupt the Linux agent foundation.
