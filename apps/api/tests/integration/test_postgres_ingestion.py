@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from aegisx_api.config import Settings
 from aegisx_api.main import create_app
+from aegisx_api.models.detection import Detection
 from aegisx_api.models.device import Device
 from aegisx_api.models.event import Event
 
@@ -72,6 +73,15 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
             assert event is not None
             assert event.local_port == 8080
             assert event.event_type == "network.listener_observed"
+
+            detection = await session.scalar(
+                select(Detection).where(Detection.source_event_id == event_id)
+            )
+            assert detection is not None
+            assert detection.rule_id == "LISTENER_OBSERVED"
+            assert detection.severity == "low"
+            assert detection.score_contribution == 5
+            assert detection.evidence_event_ids == [str(event_id)]
 
             device = await session.scalar(select(Device).where(Device.external_id == external_id))
             assert device is not None

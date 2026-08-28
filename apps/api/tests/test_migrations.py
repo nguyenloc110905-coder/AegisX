@@ -11,4 +11,4 @@ def test_migration_head_is_single_and_named() -> None:
 
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["0002_network_fields"]
+    assert scripts.get_heads() == ["0003_detection_foundation"]

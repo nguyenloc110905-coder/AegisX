@@ -1,9 +1,44 @@
 # Detection Engine
 
-Status: planned for Milestones 4-5; no detection or scoring code exists yet.
+Status: Milestone 4 foundation implemented with two deliberately weak, explainable rules. Correlation and later detection packs have not started.
 
-Rules will be deterministic, explainable, named, versionable, configurable, and independently tested. Detections will reference their source evidence and contribute to a centralized score clamped to 0-100. Correlation will group related signals by device, process identity, executable, relationships, destination, and bounded time windows rather than generating one incident per signal.
+## Pipeline
 
-Each rule contract will declare an ID, name, description, category, severity, score, required event types, evaluation behavior, generated evidence, and optional verified ATT&CK mapping. Packs will separate process/resource, network, persistence, file activity, authentication, reconnaissance, script execution, DNS, and Wi-Fi behavior rather than accumulating rules in one file.
+```text
+validated telemetry envelope
+  -> TelemetryIngestionService maps a new Event
+  -> DetectionEngine selects rules through RuleRegistry
+  -> DetectionRule.evaluate(Event)
+  -> zero or more DetectionResult values
+  -> deterministic score contributions
+  -> Event and Detection rows committed together
+```
 
-Every high-value family requires a benign comparison test. High CPU, interpreters, new listeners, new destinations, new APs, and new LAN devices are weak signals by themselves and must not produce malware/tool verdicts without context. Implementation order and telemetry dependencies are tracked in `docs/detection-backlog.md`.
+`api/telemetry.py` remains the HTTP, authentication, and batch-limit boundary. `services/telemetry_ingestion.py` owns deduplication, Event mapping, detection evaluation, and transactional persistence. A duplicate Event UUID is counted but is not evaluated again, so retries cannot duplicate Detections.
+
+## Rule contract and registry
+
+Every `DetectionRule` exposes a stable ID, name, description, category, severity, score contribution, supported event types, and `evaluate(event)`. A match returns a neutral human-readable reason plus evidence Event UUIDs. Rules are pure: they do not access HTTP, database sessions, AI, incidents, or other events.
+
+`RuleRegistry` is explicitly composed in `detection/defaults.py`, rejects duplicate IDs, and indexes rules by event type. `DetectionEngine` contains no rule-specific branch.
+
+## Implemented rules
+
+| Rule | Evidence | Severity | Contribution | Interpretation |
+|---|---|---:|---:|---|
+| `PROCESS_STARTED` | `process.started` | informational | 0 | Records the agent-proven newly observed process identity. It does not label every process suspicious. |
+| `LISTENER_OBSERVED` | `network.listener_observed` | low | 5 | Records that a listener existed in a snapshot. It does not claim the listener was newly opened. |
+
+`HIGH_RESOURCE_USAGE` is deferred. The current event is one process resource sample and does not prove sustained resource abuse. Correlation, ransomware, brute-force, port-scan, persistence, DNS, Wi-Fi, AI, incidents, notifications, and UI remain excluded.
+
+## Risk scoring
+
+A contribution is a deterministic internal heuristic, not a malware probability. Each Detection persists the exact contribution declared by its matching rule. `calculate_risk_score()` sums supplied Detection results and clamps the result to 100; negative contributions are rejected.
+
+No device-level aggregate is persisted yet because a correct aggregate needs correlation and time-window expiry semantics. A legitimate Python development listener therefore creates only a low-severity contribution of 5 with neutral wording.
+
+## Persistence and evidence
+
+Migration `0003_detection_foundation` creates `detections`. Each row has cascading foreign keys to its Device and source Event, plus rule ID, event timestamp, severity, contribution, reason, evidence Event UUID list, and creation time. The source Event FK is authoritative direct evidence. `evidence_event_ids` preserves the rule result's evidence list for future multi-evidence rules without implementing correlation now.
+
+Event and Detection rows share one database transaction. A rule exception rolls the request back instead of silently storing telemetry that skipped required evaluation.

@@ -6,7 +6,9 @@ from fastapi import FastAPI
 from aegisx_api.api.router import router
 from aegisx_api.config import Settings, get_settings
 from aegisx_api.db.session import create_engine, create_session_factory
+from aegisx_api.detection.defaults import create_default_engine
 from aegisx_api.logging import configure_logging
+from aegisx_api.services.telemetry_ingestion import TelemetryIngestionService
 
 
 @asynccontextmanager
@@ -27,6 +29,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved_settings
     app.state.engine = create_engine(resolved_settings)
     app.state.session_factory = create_session_factory(app.state.engine)
+    app.state.detection_engine = create_default_engine()
+    app.state.telemetry_ingestion_service = TelemetryIngestionService(app.state.detection_engine)
     app.include_router(router)
     return app
 

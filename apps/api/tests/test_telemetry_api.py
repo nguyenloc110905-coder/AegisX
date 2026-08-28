@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from aegisx_api.config import Settings
 from aegisx_api.db.base import Base
 from aegisx_api.main import create_app
+from aegisx_api.models.detection import Detection
 from aegisx_api.models.event import Event
 
 
@@ -94,7 +95,45 @@ async def test_ingestion_is_typed_and_idempotent(app_and_client) -> None:
     assert second.json() == {"accepted": 0, "duplicates": 1}
     async with app.state.session_factory() as session:
         count = await session.scalar(select(func.count()).select_from(Event))
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
     assert count == 1
+    assert detection_count == 1
+
+
+@pytest.mark.asyncio
+async def test_irrelevant_event_persists_without_detection(app_and_client) -> None:
+    app, client = app_and_client
+    token = await register(client)
+    response = await client.post(
+        "/api/v1/telemetry/events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "events": [
+                {
+                    "id": str(uuid4()),
+                    "schema_version": 1,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "event_type": "system.status",
+                    "source": "system_collector",
+                    "severity_hint": "normal",
+                    "data": {
+                        "hostname": "test",
+                        "os": "Linux",
+                        "kernel": "test",
+                        "uptime_seconds": 1,
+                        "cpu_count": 1,
+                        "memory_total_bytes": 1024,
+                    },
+                    "metadata": {},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 202
+    async with app.state.session_factory() as session:
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
+    assert detection_count == 0
 
 
 @pytest.mark.asyncio

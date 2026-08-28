@@ -160,3 +160,28 @@ Status: complete. Milestone 4 has not begun.
 ### Next milestone
 
 Milestone 4 — Detection Engine. It remains intentionally unstarted until this patch is reviewed.
+
+## Milestone 4 — Detection Engine Foundation
+
+Status: foundation and first rule set implemented; later detection packs are intentionally excluded.
+
+### Completed work
+
+- Added a typed `DetectionRule` protocol, independently testable process/listener rules, duplicate-safe indexed `RuleRegistry`, rule-agnostic `DetectionEngine`, immutable rule/result values, and deterministic clamped scoring.
+- Implemented `PROCESS_STARTED` as informational with contribution 0 and `LISTENER_OBSERVED` as low severity with contribution 5.
+- Deferred `HIGH_RESOURCE_USAGE` because a single current sample cannot prove sustained abuse.
+- Added `Detection` persistence and Alembic `0003_detection_foundation` with Device/source-Event foreign keys, evidence UUIDs, bounded score, reason, severity, and query indexes.
+- Extracted telemetry mapping, deduplication, detection evaluation, and atomic persistence into `TelemetryIngestionService`; the FastAPI route no longer owns detection logic.
+- Added rule match/non-match/malformed/evidence tests, registry/engine/scoring tests, a benign Python development-listener test, model/migration tests, duplicate-ingestion coverage, and PostgreSQL Event/Detection integration coverage.
+
+### Scope boundary
+
+No correlation, incidents, AI, notifications, UI, ransomware, brute-force, port-scan, persistence, DNS, or Wi-Fi detection was added.
+
+### Verification
+
+- API suite with PostgreSQL integration enabled — 29 passed.
+- Agent suite — 25 passed.
+- API and agent Ruff format/lint — passed.
+- API mypy — passed on 33 source files; agent mypy — passed on 16 source files.
+- PostgreSQL Alembic upgrade/current/heads — `0003_detection_foundation (head)`.

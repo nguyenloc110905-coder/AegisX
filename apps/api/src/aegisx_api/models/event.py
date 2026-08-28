@@ -41,6 +41,10 @@ class Event(Base):
     )
 
     device: Mapped["Device"] = relationship(back_populates="events")
+    detections: Mapped[list["Detection"]] = relationship(
+        back_populates="source_event", cascade="all, delete"
+    )
 
 
+from aegisx_api.models.detection import Detection  # noqa: E402
 from aegisx_api.models.device import Device  # noqa: E402

@@ -26,6 +26,10 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     events: Mapped[list["Event"]] = relationship(back_populates="device", cascade="all, delete")
+    detections: Mapped[list["Detection"]] = relationship(
+        back_populates="device", cascade="all, delete"
+    )
 
 
+from aegisx_api.models.detection import Detection  # noqa: E402
 from aegisx_api.models.event import Event  # noqa: E402

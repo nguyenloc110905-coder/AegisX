@@ -13,3 +13,7 @@ Implemented version 1 payloads:
 - `network.connection_observed`: snapshot evidence that a connection exists at collection time; it does not claim an opened/closed transition.
 
 No network opened/closed event exists yet because the collector does not persist and compare socket state across cycles.
+
+## Detection evidence
+
+Validated new Events are evaluated before the ingestion transaction commits. `PROCESS_STARTED` uses `process.started`; `LISTENER_OBSERVED` uses the snapshot-safe `network.listener_observed`. Every persisted Detection has a foreign key to its source Event and records its evidence Event UUIDs. Duplicate Event UUIDs are not evaluated again.
