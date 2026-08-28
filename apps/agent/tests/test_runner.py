@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import httpx
 import pytest
 
 from aegisx_agent.api_client import DeviceProfile, IngestionResult
@@ -29,6 +30,7 @@ class FakeClient:
     def __init__(self) -> None:
         self.registered = 0
         self.sent = 0
+        self.fail_delivery = False
 
     async def register(self, profile: DeviceProfile) -> AgentCredentials:
         self.registered += 1
@@ -36,6 +38,8 @@ class FakeClient:
 
     async def send_events(self, token: str, events) -> IngestionResult:
         assert token == "test-token"
+        if self.fail_delivery:
+            raise httpx.ConnectError("API offline")
         self.sent += len(events)
         return IngestionResult(accepted=len(events), duplicates=0)
 
@@ -52,6 +56,8 @@ async def test_collect_once_registers_persists_and_sends(tmp_path: Path) -> None
     result = await collect_once(settings, client=client, collectors=[FakeCollector()])
 
     assert result.accepted == 1
+    assert result.queued == 0
+    assert result.delivery_status == "delivered"
     assert client.registered == 1
     assert client.sent == 1
     assert (tmp_path / "identity.json").exists()
@@ -59,3 +65,27 @@ async def test_collect_once_registers_persists_and_sends(tmp_path: Path) -> None
 
     await collect_once(settings, client=client, collectors=[FakeCollector()])
     assert client.registered == 1
+
+
+@pytest.mark.asyncio
+async def test_collect_once_retains_offline_events_and_flushes_later(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        _env_file=None,
+        state_directory=tmp_path,
+        api_url="http://test",
+        max_outbox_events=100,
+    )
+    client = FakeClient()
+    client.fail_delivery = True
+
+    offline = await collect_once(settings, client=client, collectors=[FakeCollector()])
+
+    assert offline.delivery_status == "deferred"
+    assert offline.queued == 1
+
+    client.fail_delivery = False
+    recovered = await collect_once(settings, client=client, collectors=[FakeCollector()])
+
+    assert recovered.delivery_status == "delivered"
+    assert recovered.accepted == 2
+    assert recovered.queued == 0

@@ -11,4 +11,8 @@ make agent-sync
 make agent-once
 ```
 
-Override `AEGISX_API_URL` and `AEGISX_AGENT_STATE_DIR` when needed. Default state is under `~/.local/state/aegisx` with identity and credential files mode `0600`. Durable outbox/retry and background service lifecycle are not implemented yet.
+Override `AEGISX_API_URL` and `AEGISX_AGENT_STATE_DIR` when needed. Default state is under `~/.local/state/aegisx`. Identity, credentials, and the SQLite outbox use mode `0600`.
+
+When the API is offline, `collect-once` exits successfully with `delivery_status=deferred` and a non-zero `queued` count. Run it again after the API recovers; queued events are delivered before the outbox is cleared. The queue defaults to 10,000 events and evicts the oldest entries rather than growing without bound.
+
+Periodic retry/backoff, permanent-error quarantine, and background service lifecycle are not implemented yet.

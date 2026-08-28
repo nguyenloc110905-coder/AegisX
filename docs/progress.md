@@ -90,6 +90,7 @@ Status: in progress.
 - Stable device UUID and API credentials persisted with file mode `0600`.
 - Real Linux SystemCollector and bounded ProcessCollector behind collector interfaces.
 - API registration/client, event normalization, batching, and `collect-once` CLI.
+- Private bounded SQLite outbox with queue-first delivery and offline recovery.
 - Root Make targets for agent sync, tests, lint, typing, and one-shot execution.
 
 ### Tests executed
@@ -97,9 +98,11 @@ Status: in progress.
 - Agent suite — 9 passed; Ruff and mypy passed on 12 source files.
 - Real one-shot run — accepted 81 events in 478 ms without root.
 - PostgreSQL verification — 40 `process.started`, 40 `process.resource_usage`, and one `system.status` event for the demo device.
+- Agent suite after outbox work — 13 passed; Ruff and mypy passed on 13 source files.
+- Real offline recovery — API down queued 81 events; API recovery flushed 162 old/new events and left zero queued. PostgreSQL contained 80 lifecycle, 80 resource, and two system events.
 
 ### Remaining work
 
-- Bounded durable SQLite outbox, retry/backoff, and permanent-error quarantine.
+- Periodic retry/backoff and permanent-error quarantine.
 - Operational structured logging and periodic/background lifecycle.
 - Final Milestone 2 runtime/resource verification and synchronized root documentation.
