@@ -33,13 +33,13 @@ correlation_candidate_detections = Table(
     ForeignKeyConstraint(
         ["candidate_id"],
         ["correlation_candidates.id"],
-        name="fk_correlation_candidate_detections_candidate_id_correlation_candidates",
+        name="fk_candidate_detections_candidate",
         ondelete="CASCADE",
     ),
     ForeignKeyConstraint(
         ["detection_id"],
         ["detections.id"],
-        name="fk_correlation_candidate_detections_detection_id_detections",
+        name="fk_candidate_detections_detection",
         ondelete="CASCADE",
     ),
 )
@@ -52,13 +52,13 @@ correlation_candidate_events = Table(
     ForeignKeyConstraint(
         ["candidate_id"],
         ["correlation_candidates.id"],
-        name="fk_correlation_candidate_events_candidate_id_correlation_candidates",
+        name="fk_candidate_events_candidate",
         ondelete="CASCADE",
     ),
     ForeignKeyConstraint(
         ["event_id"],
         ["events.id"],
-        name="fk_correlation_candidate_events_event_id_events",
+        name="fk_candidate_events_event",
         ondelete="CASCADE",
     ),
 )

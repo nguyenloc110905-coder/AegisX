@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Any
 from uuid import UUID
 
 from aegisx_api.correlation.types import CorrelationResult
@@ -92,13 +91,13 @@ class ProcessListenerActivityStrategy:
         return _ListenerEvidence(detection=detection, event=event, pid=pid)
 
     @staticmethod
-    def _positive_pid(value: Any) -> int | None:
+    def _positive_pid(value: object) -> int | None:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             return None
         return value
 
     @staticmethod
-    def _started_at(value: Any) -> datetime | None:
+    def _started_at(value: object) -> datetime | None:
         if not isinstance(value, str):
             return None
         try:
