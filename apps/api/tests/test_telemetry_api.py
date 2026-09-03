@@ -281,6 +281,93 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event_type", "data"),
+    [
+        (
+            "network.listener_opened",
+            {
+                "pid": 4242,
+                "local_ip": "127.0.0.1",
+                "local_port": 8080,
+                "protocol": "tcp",
+                "state": "LISTEN",
+            },
+        ),
+        (
+            "network.listener_closed",
+            {
+                "pid": None,
+                "local_ip": "::",
+                "local_port": 5353,
+                "protocol": "udp",
+                "state": "NONE",
+            },
+        ),
+        (
+            "network.connection_opened",
+            {
+                "pid": 4242,
+                "local_ip": "192.0.2.10",
+                "local_port": 50000,
+                "remote_ip": "198.51.100.20",
+                "remote_port": 443,
+                "protocol": "tcp",
+                "state": "ESTABLISHED",
+            },
+        ),
+        (
+            "network.connection_closed",
+            {
+                "pid": None,
+                "local_ip": "192.0.2.10",
+                "local_port": 50000,
+                "remote_ip": "198.51.100.20",
+                "remote_port": 443,
+                "protocol": "tcp",
+                "state": "ESTABLISHED",
+            },
+        ),
+    ],
+)
+async def test_ingestion_accepts_typed_network_transition(
+    app_and_client,
+    event_type: str,
+    data: dict,
+) -> None:
+    app, client = app_and_client
+    token = await register(client)
+    event_id = uuid4()
+
+    response = await client.post(
+        "/api/v1/telemetry/events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "events": [
+                {
+                    "id": str(event_id),
+                    "schema_version": 1,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "event_type": event_type,
+                    "source": "network_collector",
+                    "severity_hint": "normal",
+                    "data": data,
+                    "metadata": {},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 202
+    async with app.state.session_factory() as session:
+        stored = await session.get(Event, event_id)
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
+    assert stored is not None
+    assert stored.event_type == event_type
+    assert detection_count == 0
+
+
+@pytest.mark.asyncio
 async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
     app_and_client,
 ) -> None:

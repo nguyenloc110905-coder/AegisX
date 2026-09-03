@@ -2,6 +2,8 @@
 
 Status: Milestone 5A implements one deterministic, evidence-first correlation strategy. It creates a `CorrelationCandidate`, not an incident or an attack conclusion.
 
+Milestone 5B network transition events do not change this engine's inputs or matching semantics. `PROCESS_LISTENER_ACTIVITY` continues to consume the snapshot-safe `LISTENER_OBSERVED` Detection derived from `network.listener_observed`; opened/closed transport events currently produce no Detection and no Candidate by themselves.
+
 ## Concept boundary
 
 ```text

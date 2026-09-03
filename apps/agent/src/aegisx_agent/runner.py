@@ -103,7 +103,10 @@ async def collect_once(
                 max_processes=settings.max_processes,
                 state_path=settings.state_directory / "process-state.json",
             ),
-            NetworkCollector(max_connections=settings.max_network_connections),
+            NetworkCollector(
+                max_connections=settings.max_network_connections,
+                state_path=settings.state_directory / "network-state.json",
+            ),
         ]
         events = [
             normalize_observation(observation)

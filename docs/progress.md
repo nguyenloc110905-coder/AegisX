@@ -216,7 +216,7 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ## Milestone 5B — Telemetry Fidelity & Operational Hardening
 
-Status: in progress; Tasks 1-2 complete.
+Status: in progress; Tasks 1-3 complete.
 
 ### Task 1 — Development environment
 
@@ -232,6 +232,15 @@ Status: in progress; Tasks 1-2 complete.
 - Starts and exits require complete consecutive snapshots. Enumeration failure, lookup races/access denial, or missing `create_time` suppress lifecycle transitions and preserve the prior baseline; resource observations from readable records may still be emitted.
 - The collector continues scanning identities after the detailed-output cap, preventing `max_processes` from manufacturing exits. PID reuse emits an exit for the old incarnation and a start for the new one.
 - Focused verification: process collector `9 passed`; telemetry API `10 passed`; agent/API Ruff checks passed; strict agent mypy passed on 16 source files and API mypy passed on 43 source files.
+
+### Task 3 — Network state transitions
+
+- Retained snapshot-safe listener/connection observed events and added endpoint-presence `network.listener_opened`, `network.listener_closed`, `network.connection_opened`, and `network.connection_closed` events.
+- Canonical listener identity is `(protocol, local_ip, local_port)`; connection identity adds `(remote_ip, remote_port)`. IPs are canonicalized. PID and socket state remain attributes because their OS visibility can vary.
+- The first complete snapshot establishes a private atomic baseline. Only complete consecutive snapshots generate transitions; repeated snapshots are idempotent, while collection errors or malformed addresses retain the prior baseline.
+- Duplicate canonical identities remain observable but cannot generate an opened event with an arbitrary PID; state records the endpoint without process attribution. Observed and transition outputs are separately bounded, and the full identity snapshot is still persisted.
+- Open/closed means endpoint presence changed between collector snapshots, not a precise kernel timestamp or proof of a TCP handshake. Missing process `create_time` prevents process-incarnation attribution but not endpoint identity.
+- Focused verification: network collector `11 passed`; all four network transition API cases passed; agent/API Ruff checks and strict mypy passed.
 
 ### Scope boundary
 

@@ -12,10 +12,12 @@ Implemented version 1 payloads:
 - `system.status`: hostname, OS, kernel, uptime, CPU count, and total memory.
 - `network.listener_observed`: snapshot evidence that a listener exists at collection time; it does not claim the listener was newly opened.
 - `network.connection_observed`: snapshot evidence that a connection exists at collection time; it does not claim an opened/closed transition.
+- `network.listener_opened` / `network.listener_closed`: a canonical listener endpoint changed from absent to present or present to absent across two complete consecutive snapshots.
+- `network.connection_opened` / `network.connection_closed`: a canonical local/remote endpoint tuple changed from absent to present or present to absent across two complete consecutive snapshots.
 
 Process lifecycle comparison is skipped and the prior baseline is retained when enumeration fails, any process record becomes inaccessible or disappears during lookup, or `create_time` is unavailable. One failed lookup therefore cannot manufacture an exit. The collector scans every returned process identity even when detailed resource output reaches `max_processes`, so the output bound cannot create false absence. PID reuse is two transitions: the old `(PID, create_time)` exits and the new incarnation starts. Baseline version 2 is written with mode `0600` through `fsync` plus atomic replacement and can read the prior version-1 key format.
 
-No network opened/closed event exists yet because the collector does not persist and compare socket state across cycles.
+Listener identity is `(protocol, canonical local IP, local port)`. Connection identity adds canonical remote IP and remote port. PID and socket state are evidence attributes, not identity, because OS visibility can change between snapshots. The first snapshot establishes an atomic private baseline and emits observations only; repeated snapshots remain observation-only. A collection failure or malformed address suppresses all transitions and baseline replacement. Duplicate canonical identities remain observed but do not produce an opened transition with an arbitrary process association; their baseline PID is recorded as unavailable. The collector never claims kernel open/close timestamps or a TCP handshake—only endpoint presence transitions between its snapshots. Observations and transitions are separately bounded by `max_network_connections`, so excess truthful transitions may be omitted rather than emitted later from stale state.
 
 ## Detection evidence
 

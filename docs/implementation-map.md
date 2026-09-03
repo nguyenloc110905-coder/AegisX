@@ -1,6 +1,6 @@
 # AegisX Current Implementation Map
 
-This document maps the source code through the Milestone 5A correlation foundation. It does not treat plans, backlogs, or README claims as implementation evidence.
+This document maps the source code through the in-progress Milestone 5B hardening work. It does not treat plans, backlogs, or README claims as implementation evidence.
 
 ## 1. Current status
 
@@ -11,9 +11,9 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - PostgreSQL 17 development service through Compose.
 - FastAPI liveness/readiness, Linux device registration, bearer-token authentication, and typed idempotent telemetry ingestion.
 - Async SQLAlchemy Device/Event/Detection/CorrelationCandidate persistence and four Alembic migrations.
-- Linux system, process, and network snapshot collectors.
+- Linux system snapshots plus process and network snapshot-transition collectors.
 - Agent normalization, registration, local identity/credential persistence, bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
-- Schema-version-1 events: `system.status`, `process.started`, `process.exited`, `process.resource_usage`, `network.listener_observed`, and `network.connection_observed`.
+- Schema-version-1 events: system status; process started/exited/resource usage; and network listener/connection observed/opened/closed.
 - FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection/CorrelationCandidate integration coverage.
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OBSERVED` rules.
 - Deterministic `PROCESS_LISTENER_ACTIVITY` correlation with bounded evidence loading, a configurable inclusive window, relational Candidate evidence, savepoint-isolated failure handling, and one Candidate per canonical process identity.
@@ -21,7 +21,7 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 ### Partially implemented
 
 - Process lifecycle completeness under OS races: starts and exits require complete consecutive snapshots, so any inaccessible/vanished record deliberately defers lifecycle transitions until a later complete comparison.
-- Network lifecycle: `NetworkCollector` truthfully names current socket observations; it does not calculate or claim opened/closed transitions.
+- Network lifecycle fidelity depends on complete snapshots; malformed or denied OS data intentionally defers transition comparison.
 - Operational logging: JSON cycle logging exists for the agent and structlog is configured in the API, but there is no request correlation middleware or centralized exception logging.
 - Agent service lifecycle: continuous CLI execution exists, but no systemd unit/install/uninstall flow exists.
 - API architecture: telemetry ingestion has a service boundary; device registration still persists directly in its route and there are no repository modules.
@@ -132,7 +132,7 @@ AegisX/
 
 ### Validation
 
-**Status: implemented for the six supported event types.** FastAPI/Pydantic validates `EventBatchRequest` and the `TelemetryEvent` discriminated union before the handler runs. IPv4/IPv6 addresses, port ranges, PID/resource ranges, schema version, event type, severity, and batch length are bounded. The agent-side `Observation` remains deliberately flexible.
+**Status: implemented for the ten supported event types.** FastAPI/Pydantic validates `EventBatchRequest` and the `TelemetryEvent` discriminated union before the handler runs. IPv4/IPv6 addresses, port ranges, PID/resource ranges, schema version, event type, severity, and batch length are bounded. The agent-side `Observation` remains deliberately flexible.
 
 ### Database
 
@@ -217,7 +217,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | Base collector abstraction | Implemented | `collectors/base.py: Collector`; only `collect()`, no start/stop lifecycle. |
 | SystemCollector | Implemented | `collectors/system.py: SystemCollector.collect()`. |
 | ProcessCollector | Implemented for starts/exits/resources | `collectors/process.py`; atomic persisted `(PID, create_time)` baseline, bounded detail output with a complete identity scan, and conservative permission/race handling. First scan is baseline-only. |
-| NetworkCollector | Implemented as snapshots | `collectors/network.py`; TCP/UDP listeners/connections, optional PID, bounded output. |
+| NetworkCollector | Implemented for observations/transitions | `collectors/network.py`; TCP/UDP listener/connection observations, endpoint-presence opened/closed comparison, optional PID attributes, atomic baseline, and bounded output. |
 | FileCollector | Not implemented | No source file/class. |
 | ServiceCollector | Not implemented | No source file/class. |
 | WifiCollector | Not implemented | No source file/class. |

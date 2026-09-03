@@ -82,8 +82,18 @@ class NetworkListenerEvent(EventEnvelope):
     data: NetworkListenerData
 
 
+class NetworkListenerTransitionEvent(EventEnvelope):
+    event_type: Literal["network.listener_opened", "network.listener_closed"]
+    data: NetworkListenerData
+
+
 class NetworkConnectionEvent(EventEnvelope):
     event_type: Literal["network.connection_observed"]
+    data: NetworkConnectionData
+
+
+class NetworkConnectionTransitionEvent(EventEnvelope):
+    event_type: Literal["network.connection_opened", "network.connection_closed"]
     data: NetworkConnectionData
 
 
@@ -93,7 +103,9 @@ TelemetryEvent = Annotated[
     | ProcessResourceUsageEvent
     | SystemStatusEvent
     | NetworkListenerEvent
-    | NetworkConnectionEvent,
+    | NetworkListenerTransitionEvent
+    | NetworkConnectionEvent
+    | NetworkConnectionTransitionEvent,
     Field(discriminator="event_type"),
 ]
 
