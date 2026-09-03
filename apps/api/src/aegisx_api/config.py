@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     api_title: str = "AegisX API"
     api_version: str = "0.1.0"
     telemetry_batch_limit: int = Field(default=100, ge=1, le=1000)
+    correlation_window_seconds: int = Field(default=300, ge=1, le=86400)
 
 
 @lru_cache

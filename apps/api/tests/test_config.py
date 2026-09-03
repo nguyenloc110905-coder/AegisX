@@ -18,3 +18,20 @@ def test_settings_reject_unknown_environment_name() -> None:
         assert "environment" in str(error)
     else:
         raise AssertionError("invalid environment must be rejected")
+
+
+def test_settings_configures_bounded_correlation_window() -> None:
+    assert Settings(_env_file=None).correlation_window_seconds == 300
+    assert Settings(_env_file=None, correlation_window_seconds=1).correlation_window_seconds == 1
+    assert (
+        Settings(_env_file=None, correlation_window_seconds=86400).correlation_window_seconds
+        == 86400
+    )
+
+    for invalid_window in (0, 86401):
+        try:
+            Settings(_env_file=None, correlation_window_seconds=invalid_window)
+        except ValueError as error:
+            assert "correlation_window_seconds" in str(error)
+        else:
+            raise AssertionError("invalid correlation window must be rejected")
