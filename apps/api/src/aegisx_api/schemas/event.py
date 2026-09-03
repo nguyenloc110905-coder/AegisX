@@ -15,6 +15,11 @@ class ProcessStartedData(BaseModel):
     started_at: datetime | None = None
 
 
+class ProcessExitedData(BaseModel):
+    pid: int = Field(gt=0)
+    started_at: datetime
+
+
 class ProcessResourceUsageData(BaseModel):
     pid: int = Field(gt=0)
     cpu_percent: float = Field(ge=0)
@@ -57,6 +62,11 @@ class ProcessStartedEvent(EventEnvelope):
     data: ProcessStartedData
 
 
+class ProcessExitedEvent(EventEnvelope):
+    event_type: Literal["process.exited"]
+    data: ProcessExitedData
+
+
 class ProcessResourceUsageEvent(EventEnvelope):
     event_type: Literal["process.resource_usage"]
     data: ProcessResourceUsageData
@@ -79,6 +89,7 @@ class NetworkConnectionEvent(EventEnvelope):
 
 TelemetryEvent = Annotated[
     ProcessStartedEvent
+    | ProcessExitedEvent
     | ProcessResourceUsageEvent
     | SystemStatusEvent
     | NetworkListenerEvent

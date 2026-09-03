@@ -9,9 +9,15 @@ from aegisx_agent.collectors.process import ProcessCollector
 
 
 class FakeProcess:
-    def __init__(self, info: dict[str, Any] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        info: dict[str, Any] | None = None,
+        error: Exception | None = None,
+        pid: int | None = None,
+    ) -> None:
         self._info = info
         self._error = error
+        self.pid = pid if pid is not None else int((info or {}).get("pid", 0))
 
     @property
     def info(self) -> dict[str, Any]:
@@ -30,7 +36,12 @@ def iterator(processes: list[FakeProcess]):
     return process_iter
 
 
-def process_info(pid: int, command_line: list[str] | None = None) -> dict[str, Any]:
+def process_info(
+    pid: int,
+    command_line: list[str] | None = None,
+    *,
+    create_time: float = 1_700_000_000.0,
+) -> dict[str, Any]:
     return {
         "pid": pid,
         "ppid": 1,
@@ -40,7 +51,7 @@ def process_info(pid: int, command_line: list[str] | None = None) -> dict[str, A
         "cmdline": command_line or ["python3", "demo.py"],
         "cpu_percent": 12.5,
         "memory_info": SimpleNamespace(rss=4096),
-        "create_time": 1_700_000_000.0,
+        "create_time": create_time,
     }
 
 
@@ -82,6 +93,115 @@ def test_process_collector_skips_inaccessible_and_vanished_processes(tmp_path: P
 
     assert len(events) == 1
     assert all(event.data["pid"] == 3 for event in events)
+
+
+def test_process_collector_emits_exit_only_after_complete_absence(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    processes = [FakeProcess(process_info(42))]
+    collector = ProcessCollector(process_iter=iterator(processes), state_path=state_path)
+
+    collector.collect()
+    unchanged = collector.collect()
+    processes.clear()
+    exited = collector.collect()
+    repeated_empty = collector.collect()
+
+    assert "process.exited" not in [event.event_type for event in unchanged]
+    assert [(event.event_type, event.data) for event in exited] == [
+        (
+            "process.exited",
+            {"pid": 42, "started_at": "2023-11-14T22:13:20+00:00"},
+        )
+    ]
+    assert repeated_empty == []
+
+
+def test_process_collector_does_not_infer_exit_from_failed_lookup(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    processes = [FakeProcess(process_info(42))]
+    collector = ProcessCollector(process_iter=iterator(processes), state_path=state_path)
+    collector.collect()
+
+    processes[:] = [FakeProcess(error=psutil.NoSuchProcess(pid=42), pid=42)]
+    failed = collector.collect()
+    processes[:] = [FakeProcess(process_info(42))]
+    recovered = collector.collect()
+
+    assert failed == []
+    assert [event.event_type for event in recovered] == ["process.resource_usage"]
+
+
+def test_process_collector_does_not_update_baseline_without_create_time(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    processes = [FakeProcess(process_info(42))]
+    collector = ProcessCollector(process_iter=iterator(processes), state_path=state_path)
+    collector.collect()
+
+    incomplete = process_info(42)
+    incomplete["create_time"] = None
+    processes[:] = [FakeProcess(incomplete)]
+    assert collector.collect() == []
+
+    processes[:] = [FakeProcess(process_info(42))]
+    assert [event.event_type for event in collector.collect()] == ["process.resource_usage"]
+
+
+def test_process_collector_pid_reuse_emits_old_exit_and_new_start(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    old = FakeProcess(process_info(42, create_time=1_700_000_000.0))
+    replacement = FakeProcess(process_info(42, create_time=1_700_000_100.0))
+    processes = [old]
+    collector = ProcessCollector(process_iter=iterator(processes), state_path=state_path)
+    collector.collect()
+
+    processes[:] = [replacement]
+    events = collector.collect()
+
+    lifecycle = [event for event in events if event.event_type != "process.resource_usage"]
+    assert {event.event_type for event in lifecycle} == {"process.started", "process.exited"}
+    assert next(event for event in lifecycle if event.event_type == "process.exited").data == {
+        "pid": 42,
+        "started_at": "2023-11-14T22:13:20+00:00",
+    }
+    assert (
+        next(event for event in lifecycle if event.event_type == "process.started").data[
+            "started_at"
+        ]
+        == "2023-11-14T22:15:00+00:00"
+    )
+
+
+def test_process_collector_restart_reads_persisted_exit_baseline(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    ProcessCollector(
+        process_iter=iterator([FakeProcess(process_info(42))]), state_path=state_path
+    ).collect()
+
+    events = ProcessCollector(process_iter=iterator([]), state_path=state_path).collect()
+
+    assert [event.event_type for event in events] == ["process.exited"]
+
+
+def test_process_collector_output_cap_does_not_make_identity_snapshot_incomplete(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "process-state.json"
+    processes = [FakeProcess(process_info(42)), FakeProcess(process_info(43))]
+    collector = ProcessCollector(
+        process_iter=iterator(processes), max_processes=1, state_path=state_path
+    )
+    baseline = collector.collect()
+
+    unchanged = collector.collect()
+    processes[:] = [FakeProcess(process_info(42))]
+    exited = collector.collect()
+
+    assert [event.event_type for event in baseline] == ["process.resource_usage"]
+    assert [event.event_type for event in unchanged] == ["process.resource_usage"]
+    assert [event.data["pid"] for event in exited if event.event_type == "process.exited"] == [43]
+    assert [
+        event.data["pid"] for event in exited if event.event_type == "process.resource_usage"
+    ] == [42]
 
 
 def test_process_collector_bounds_processes_and_command_line(tmp_path: Path) -> None:

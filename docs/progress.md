@@ -216,7 +216,7 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ## Milestone 5B — Telemetry Fidelity & Operational Hardening
 
-Status: in progress; Task 1 complete.
+Status: in progress; Tasks 1-2 complete.
 
 ### Task 1 — Development environment
 
@@ -224,6 +224,14 @@ Status: in progress; Task 1 complete.
 - `docker compose --env-file .env.example config --quiet` passed and the rendered configuration contains both the named PostgreSQL data volume and read-only SELinux-labelled initialization bind mount.
 - Docker runtime access remains unavailable to user `nguyenloc`: `/var/run/docker.sock` is owned by `root:docker` and the user is not a member of `docker`.
 - Rootless `podman compose --env-file .env.example up -d --wait postgres` reported the service healthy; `pg_isready` accepted connections and `SELECT 1 AS compose_postgres_ok` returned one row.
+
+### Task 2 — Truthful process exits
+
+- Added `process.exited` to schema version 1. It carries the prior incarnation's positive PID and required `started_at`; the Event timestamp records when absence was observed rather than claiming an exact kernel exit time.
+- Lifecycle state now stores versioned `(PID, create_time)` records and writes them with private mode `0600`, file/directory synchronization, and atomic replacement. Existing version-1 baselines remain readable.
+- Starts and exits require complete consecutive snapshots. Enumeration failure, lookup races/access denial, or missing `create_time` suppress lifecycle transitions and preserve the prior baseline; resource observations from readable records may still be emitted.
+- The collector continues scanning identities after the detailed-output cap, preventing `max_processes` from manufacturing exits. PID reuse emits an exit for the old incarnation and a start for the new one.
+- Focused verification: process collector `9 passed`; telemetry API `10 passed`; agent/API Ruff checks passed; strict agent mypy passed on 16 source files and API mypy passed on 43 source files.
 
 ### Scope boundary
 

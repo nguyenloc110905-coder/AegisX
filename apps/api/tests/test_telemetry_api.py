@@ -244,6 +244,43 @@ async def test_ingestion_accepts_typed_network_listener(app_and_client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_client) -> None:
+    app, client = app_and_client
+    token = await register(client)
+    event_id = uuid4()
+    response = await client.post(
+        "/api/v1/telemetry/events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "events": [
+                {
+                    "id": str(event_id),
+                    "schema_version": 1,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "event_type": "process.exited",
+                    "source": "process_collector",
+                    "severity_hint": "normal",
+                    "data": {
+                        "pid": 4242,
+                        "started_at": "2026-09-03T01:00:00+00:00",
+                    },
+                    "metadata": {},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 202
+    async with app.state.session_factory() as session:
+        stored = await session.get(Event, event_id)
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
+    assert stored is not None
+    assert stored.event_type == "process.exited"
+    assert stored.process_id == 4242
+    assert detection_count == 0
+
+
+@pytest.mark.asyncio
 async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
     app_and_client,
 ) -> None:

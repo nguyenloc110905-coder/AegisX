@@ -55,7 +55,7 @@
 - [ ] Write failing collector tests for first baseline, unchanged process, one confirmed absence, inaccessible lookup retention, PID reuse, and same-PID restart producing old exit plus new start.
 - [ ] Run the focused tests and confirm failures are caused by missing `process.exited` behavior.
 - [ ] Replace truncate-in-place state writes with a private temporary file, `fsync`, permission `0600`, and `os.replace`; retain backward reading of version-1 keys.
-- [ ] Suppress all transitions and baseline replacement when process enumeration is incomplete, capped, or raises; retain prior identities for per-process lookup failures when the PID is known.
+- [ ] Suppress all transitions and baseline replacement when process enumeration is incomplete or raises. Continue scanning identities after the output cap so the cap cannot manufacture absence; any per-process lookup failure makes that snapshot ineligible for lifecycle comparison.
 - [ ] Emit `process.exited` only for a prior incarnation absent from a complete current snapshot, and emit both exit/start for trustworthy PID reuse.
 - [ ] Add failing then passing API validation tests for the `process.exited` payload.
 - [ ] Run focused agent/API tests plus Ruff and mypy for changed packages.
