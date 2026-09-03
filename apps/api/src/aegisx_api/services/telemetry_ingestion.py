@@ -7,11 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegisx_api.detection.engine import DetectionEngine
+from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
 from aegisx_api.models.device import Device
 from aegisx_api.models.event import Event
 from aegisx_api.schemas.event import EventBatchResponse, TelemetryEvent
 from aegisx_api.services.correlation import CorrelationService
+from aegisx_api.services.incident import IncidentService
 
 logger = structlog.get_logger(__name__)
 
@@ -21,10 +23,12 @@ class TelemetryIngestionService:
         self,
         detection_engine: DetectionEngine,
         correlation_service: CorrelationService,
+        incident_service: IncidentService,
         correlation_window: timedelta,
     ) -> None:
         self._detection_engine = detection_engine
         self._correlation_service = correlation_service
+        self._incident_service = incident_service
         self._correlation_window = correlation_window
 
     async def ingest(
@@ -72,23 +76,37 @@ class TelemetryIngestionService:
         device.last_seen_at = datetime.now(UTC)
         await session.flush()
         if new_detections:
+            new_candidates: Sequence[CorrelationCandidate] = ()
             try:
                 correlation_strategy_ids = self._correlation_service.strategy_ids_for(
                     new_detections
                 )
                 async with session.begin_nested():
-                    correlation_candidate_count = await self._correlation_service.correlate(
+                    new_candidates = await self._correlation_service.correlate(
                         session,
                         device.id,
                         new_detections,
                         self._correlation_window,
                     )
+                correlation_candidate_count = len(new_candidates)
                 correlation_outcome = (
                     "candidate_created" if correlation_candidate_count else "no_candidate"
                 )
             except Exception as error:
                 correlation_outcome = "failed"
                 correlation_failure_category = type(error).__name__
+
+            if new_candidates:
+                for candidate in new_candidates:
+                    try:
+                        async with session.begin_nested():
+                            await self._incident_service.process_candidate(session, candidate)
+                    except Exception:
+                        logger.debug(
+                            "incident_promotion_skipped",
+                            candidate_id=str(candidate.id),
+                            reason="exception_logged_in_incident_service",
+                        )
         await session.commit()
         if correlation_outcome is not None:
             log_context = {

@@ -1,13 +1,13 @@
 from asyncio import run
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from aegisx_api.config import get_settings
 from aegisx_api.db.base import Base
 from aegisx_api.models import Device, Event  # noqa: F401
+from alembic import context
 
 config = context.config
 if config.config_file_name:

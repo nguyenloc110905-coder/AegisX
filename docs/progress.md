@@ -272,3 +272,37 @@ Status: complete and verified.
 ### Scope boundary
 
 Incident, AI, UI, notifications, advanced attack detection packs, DNS, Wi-Fi, and packaging/onboarding UX remain unstarted.
+
+## Milestone 6A — Incident Foundation
+
+Status: implemented and unit-verified; PostgreSQL integration tests require `AEGISX_TEST_POSTGRES_URL`.
+
+### Completed work
+
+- Added `Incident` and `IncidentStatusTransition` SQLAlchemy models with full check constraints (status, disposition, severity, risk, version, evidence bounds, closed_at invariant, resolved-disposition invariant).
+- Added association tables `incident_correlation_candidates`, `incident_detections`, `incident_events` with cascade deletes; candidate is uniquely attachable to exactly one Incident.
+- Added Alembic migration `0005_incident_foundation` (after `0004_correlation_foundation`); no active-group unique index added as per approved spec.
+- Added `apps/api/src/aegisx_api/incident/policies.py` — `IncidentDecision` dataclass, abstract `IncidentPromotionPolicy`, and `IncidentPolicyRegistry` with duplicate-guard registration and thread-safe clear.
+- Added `apps/api/src/aegisx_api/services/incident.py` — `IncidentService.process_candidate()` implementing the full approved pipeline: confidence/score gate → policy lookup → `evaluate()` → idempotency check → advisory-lock acquisition with 2-second bounded timeout → sliding-window grouping query → attach-to-existing or create-new with audit transition → structured observability.
+- Advisory lock key is derived from `grouping_key` SHA-256 → first 8 bytes → signed 64-bit big-endian integer. Collisions only serialize unrelated promotions; all DB filtering uses the full 64-char `grouping_key` string.
+- `TelemetryIngestionService` extended: accepts `IncidentService`, calls `process_candidate()` per candidate in its own savepoint. A failure in the Incident savepoint never rolls back the already-committed `CorrelationCandidate`.
+- `Device` model updated with `incidents` relationship.
+- Added 26 unit tests in `tests/incident/test_incident_service.py` covering: policy registry, no-policy gate, low-confidence gate, low-score gate, never-promote gate, severity computation, hash-to-lock-id determinism and range, collision identity safety.
+- Added 2 PostgreSQL integration tests in `tests/integration/test_postgres_incident.py` (skipped without DB): incident creation + in-window attachment + out-of-window new episode; savepoint failure preserves Candidate.
+
+### PROCESS_LISTENER_ACTIVITY status
+
+- No production promotion policy added for `PROCESS_LISTENER_ACTIVITY`.
+- The candidate remains low confidence, aggregate score 5, and will NOT automatically create an Incident.
+
+### Scope boundary
+
+AI Investigator, UI, notifications, response actions, background reconciliation, packaging, and Milestone 6B+ work remain unstarted.
+
+### Verification
+
+- API suite: 84 passed, 3 skipped (PostgreSQL integration skipped without `AEGISX_TEST_POSTGRES_URL`).
+- Agent suite: unchanged, 43 passed.
+- API Ruff format/check: clean on 46 source files.
+- API mypy strict: clean on 46 source files.
+- Alembic: migration `0005_incident_foundation` is the single head.

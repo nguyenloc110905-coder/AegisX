@@ -546,6 +546,7 @@ async def test_correlation_failure_preserves_authoritative_event_and_detection_r
     app.state.telemetry_ingestion_service = TelemetryIngestionService(
         app.state.detection_engine,
         RaisingCorrelationService(),
+        app.state.incident_service,
         timedelta(seconds=app.state.settings.correlation_window_seconds),
     )
     token = await register(client)
@@ -634,6 +635,7 @@ async def test_correlation_failure_does_not_claim_evidence_survived_failed_outer
     app.state.telemetry_ingestion_service = TelemetryIngestionService(
         app.state.detection_engine,
         RaisingCorrelationService(),
+        app.state.incident_service,
         timedelta(seconds=app.state.settings.correlation_window_seconds),
     )
     token = await register(client)

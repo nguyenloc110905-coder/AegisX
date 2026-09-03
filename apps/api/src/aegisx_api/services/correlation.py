@@ -31,9 +31,9 @@ class CorrelationService:
         device_id: UUID,
         new_detections: Sequence[Detection],
         window: timedelta,
-    ) -> int:
+    ) -> Sequence[CorrelationCandidate]:
         if not new_detections:
-            return 0
+            return ()
 
         new_by_id = {detection.id: detection for detection in new_detections}
         new_detection_ids = frozenset(new_by_id)
@@ -72,7 +72,7 @@ class CorrelationService:
                     results_by_key.setdefault(result.correlation_key, result)
         results = tuple(results_by_key.values())
         if not results:
-            return 0
+            return ()
 
         result_keys = tuple(result.correlation_key for result in results)
         existing_keys = set(
@@ -88,29 +88,28 @@ class CorrelationService:
         events_by_id = {
             detection.source_event.id: detection.source_event for detection in complete_evidence
         }
-        added = 0
+        added_candidates = []
         for result in results:
             if result.correlation_key in existing_keys or new_detection_ids.isdisjoint(
                 result.detection_ids
             ):
                 continue
-            session.add(
-                CorrelationCandidate(
-                    correlation_key=result.correlation_key,
-                    device_id=result.device_id,
-                    strategy_id=result.strategy_id,
-                    start_timestamp=result.start_timestamp,
-                    end_timestamp=result.end_timestamp,
-                    confidence=result.confidence,
-                    aggregate_score=result.aggregate_score,
-                    reason=_PROCESS_LISTENER_REASON,
-                    detections=[detections_by_id[item_id] for item_id in result.detection_ids],
-                    events=[events_by_id[item_id] for item_id in result.event_ids],
-                )
+            candidate = CorrelationCandidate(
+                correlation_key=result.correlation_key,
+                device_id=result.device_id,
+                strategy_id=result.strategy_id,
+                start_timestamp=result.start_timestamp,
+                end_timestamp=result.end_timestamp,
+                confidence=result.confidence,
+                aggregate_score=result.aggregate_score,
+                reason=_PROCESS_LISTENER_REASON,
+                detections=[detections_by_id[item_id] for item_id in result.detection_ids],
+                events=[events_by_id[item_id] for item_id in result.event_ids],
             )
+            session.add(candidate)
             existing_keys.add(result.correlation_key)
-            added += 1
-        return added
+            added_candidates.append(candidate)
+        return added_candidates
 
     @staticmethod
     def _evidence_for_anchor(

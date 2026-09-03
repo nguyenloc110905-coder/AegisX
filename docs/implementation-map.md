@@ -4,7 +4,7 @@ This document maps the source code through the verified Milestone 5B hardening w
 
 ## 1. Current status
 
-The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, the Milestone 4 detection foundation with its first two rules, and a narrow Milestone 5A correlation foundation. Later detection packs and incident workflow have not started.
+The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, the Milestone 4 detection foundation with its first two rules, a narrow Milestone 5A correlation foundation, and the Milestone 6A Incident Foundation. Later detection packs, AI Investigator, UI, notifications, and response actions have not started.
 
 ### Implemented
 
@@ -17,6 +17,7 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection/CorrelationCandidate integration coverage.
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OBSERVED` rules.
 - Deterministic `PROCESS_LISTENER_ACTIVITY` correlation with bounded evidence loading, a configurable inclusive window, relational Candidate evidence, savepoint-isolated failure handling, and one Candidate per canonical process identity.
+- Incident Foundation (Milestone 6A): `Incident`/`IncidentStatusTransition` models, `incident_correlation_candidates`/`incident_detections`/`incident_events` association tables, Alembic migration `0005_incident_foundation`, abstract `IncidentPromotionPolicy`/`IncidentPolicyRegistry`, `IncidentService` with advisory-lock-based promotion, sliding-window attachment, idempotency guard, and audit transitions. No production policy for `PROCESS_LISTENER_ACTIVITY` was added.
 
 ### Partially implemented
 
@@ -36,9 +37,9 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 
 ### Verified checks
 
-- API: 51 pytest cases passed with PostgreSQL integration enabled, including the real Candidate flow; Ruff format/lint passed; strict mypy passed on 43 source files.
+- API: 84 pytest cases passed (3 skipped for missing PostgreSQL URL), including unit incident tests; Ruff format/lint passed; strict mypy passed on 46 source files.
 - Agent: 25 pytest cases passed; Ruff format/lint passed; strict mypy passed on 16 source files.
-- PostgreSQL Alembic `upgrade head`, `current`, and `heads` reached the single `0004_correlation_foundation (head)`.
+- PostgreSQL Alembic `upgrade head`, `current`, and `heads` reached the single `0005_incident_foundation (head)`.
 
 ## 2. Important project tree
 
@@ -65,7 +66,8 @@ AegisX/
 │   │   │   ├── security.py              # Device-token generation and SHA-256 digest.
 │   │   │   ├── detection/                # Rule contract, registry, engine, scoring, first rules.
 │   │   │   ├── correlation/              # Strategy contract, registry, engine, process/listener strategy.
-│   │   │   ├── services/                 # Transactional telemetry/detection ingestion and Candidate persistence.
+│   │   │   ├── incident/                 # Promotion policy abstraction and registry.
+│   │   │   ├── services/                 # Transactional ingestion, correlation, and Incident promotion.
 │   │   │   ├── api/
 │   │   │   │   ├── router.py            # Combines health/device/telemetry routers.
 │   │   │   │   ├── health.py            # Liveness and database readiness routes.
@@ -79,11 +81,12 @@ AegisX/
 │   │   │   │   ├── device.py            # Device SQLAlchemy model.
 │   │   │   │   ├── event.py             # Event SQLAlchemy model and indexes.
 │   │   │   │   ├── detection.py         # Detection evidence and score contributions.
-│   │   │   │   └── correlation.py       # Candidate model and relational evidence associations.
+│   │   │   │   ├── correlation.py       # Candidate model and relational evidence associations.
+│   │   │   │   └── incident.py          # Incident, IncidentStatusTransition models and evidence associations.
 │   │   │   └── schemas/
 │   │   │       ├── device.py             # Registration request/response models.
 │   │   │       └── event.py              # Discriminated event payload/envelope models.
-│   │   └── tests/                         # 58 non-integration cases across API test modules plus one PostgreSQL integration case.
+│   │   └── tests/                         # 84 cases (26 incident unit + 58 other) plus 2 PostgreSQL incident integration cases.
 │   ├── agent/
 │   │   ├── pyproject.toml                # Agent CLI package and quality configuration.
 │   │   ├── src/aegisx_agent/
@@ -156,7 +159,7 @@ AegisX/
 
 ### Incident
 
-**Status: not implemented.** There is no Incident model, route, timeline, or incident-event relation.
+**Status: Milestone 6A foundation implemented.** `models/incident.py` defines `Incident` (with status/disposition lifecycle, sliding-window evidence timestamps, advisory-lock-based promotion, and optimistic-locking `version` column) and `IncidentStatusTransition` (audit trail). `incident/policies.py` defines `IncidentPromotionPolicy` and `IncidentPolicyRegistry`. `services/incident.py` hosts `IncidentService` with the full promotion pipeline. Alembic `0005_incident_foundation` owns the schema. No production promotion policy for `PROCESS_LISTENER_ACTIVITY` was introduced. `PROCESS_LISTENER_ACTIVITY` remains low confidence, score 5, and does NOT automatically create an Incident.
 
 ### AI Investigator
 
@@ -270,7 +273,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | Validation | Yes for five events | `schemas/event.py` | Discriminator selects the correct payload model before handler logic. |
 | Detection | Foundation | `detection/`, `services/telemetry_ingestion.py`, `models/detection.py` | Pure rules, indexed selection, result mapping, and same-transaction persistence. |
 | Correlation | Foundation | `correlation/`, `services/correlation.py`, `models/correlation.py` | Deterministic, bounded process/listener Candidate creation; not an Incident or attack conclusion. |
-| Incident | No | None | No model, service, or endpoint. |
+| Incident | Foundation (6A) | `models/incident.py`, `incident/policies.py`, `services/incident.py` | Promotion policy abstraction, advisory-lock serialization, sliding-window grouping, status/disposition lifecycle. |
 | WebSocket | No | None | No realtime server implementation. |
 | AI | No | None | No provider or analysis code. |
 

@@ -11,6 +11,7 @@ from aegisx_api.db.session import create_engine, create_session_factory
 from aegisx_api.detection.defaults import create_default_engine
 from aegisx_api.logging import configure_logging
 from aegisx_api.services.correlation import CorrelationService
+from aegisx_api.services.incident import IncidentService
 from aegisx_api.services.telemetry_ingestion import TelemetryIngestionService
 
 
@@ -35,9 +36,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.detection_engine = create_default_engine()
     app.state.correlation_engine = create_default_correlation_engine()
     app.state.correlation_service = CorrelationService(app.state.correlation_engine)
+    app.state.incident_service = IncidentService()
     app.state.telemetry_ingestion_service = TelemetryIngestionService(
         app.state.detection_engine,
         app.state.correlation_service,
+        app.state.incident_service,
         timedelta(seconds=resolved_settings.correlation_window_seconds),
     )
     app.include_router(router)
