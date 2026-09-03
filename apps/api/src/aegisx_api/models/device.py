@@ -29,7 +29,11 @@ class Device(Base):
     detections: Mapped[list["Detection"]] = relationship(
         back_populates="device", cascade="all, delete"
     )
+    correlation_candidates: Mapped[list["CorrelationCandidate"]] = relationship(
+        back_populates="device", cascade="all, delete"
+    )
 
 
+from aegisx_api.models.correlation import CorrelationCandidate  # noqa: E402
 from aegisx_api.models.detection import Detection  # noqa: E402
 from aegisx_api.models.event import Event  # noqa: E402
