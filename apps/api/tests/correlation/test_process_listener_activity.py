@@ -27,6 +27,7 @@ def process_detection(
     started_at: object = STARTED_AT,
     event_id: UUID = PROCESS_EVENT_ID,
     detection_id: UUID = PROCESS_DETECTION_ID,
+    score_contribution: int = 0,
 ):
     return detection(
         rule_id="PROCESS_STARTED",
@@ -37,7 +38,7 @@ def process_detection(
             timestamp=timestamp,
             data={"pid": pid, "started_at": started_at},
         ),
-        score_contribution=0,
+        score_contribution=score_contribution,
         detection_id=detection_id,
     )
 
@@ -83,6 +84,36 @@ def test_correlates_recent_listener_with_same_process_identity() -> None:
     assert candidate.aggregate_score == 5
     assert candidate.detection_ids == (PROCESS_DETECTION_ID, LISTENER_DETECTION_ID)
     assert candidate.event_ids == (PROCESS_EVENT_ID, LISTENER_EVENT_ID)
+
+
+def test_canonicalizes_equivalent_started_at_instants_regardless_of_evidence_order() -> None:
+    utc_process = process_detection(
+        event_id=UUID("77777777-7777-7777-7777-777777777777"),
+        detection_id=UUID("88888888-8888-8888-8888-888888888888"),
+    )
+    offset_process = process_detection(
+        started_at="2026-09-03T08:00:00+07:00",
+        event_id=UUID("99999999-9999-9999-9999-999999999999"),
+        detection_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    )
+    listener = listener_detection()
+    strategy = ProcessListenerActivityStrategy()
+
+    utc_key = strategy.evaluate((utc_process, listener), WINDOW)[0].correlation_key
+    offset_key = strategy.evaluate((offset_process, listener), WINDOW)[0].correlation_key
+    forward_keys = tuple(
+        result.correlation_key
+        for result in strategy.evaluate((utc_process, offset_process, listener), WINDOW)
+    )
+    reversed_keys = tuple(
+        result.correlation_key
+        for result in strategy.evaluate((offset_process, utc_process, listener), WINDOW)
+    )
+
+    assert utc_key == "61c50a3510e881696424af7566716fc7aed3113a0f6786294bbb066c0eb92c37"
+    assert offset_key == utc_key
+    assert forward_keys == (utc_key,)
+    assert reversed_keys == forward_keys
 
 
 def test_returns_no_result_for_different_device_or_pid() -> None:
@@ -137,6 +168,45 @@ def test_returns_no_result_when_process_is_outside_window() -> None:
         )
         == ()
     )
+
+
+def test_correlates_process_at_exact_inclusive_window_boundary() -> None:
+    result = ProcessListenerActivityStrategy().evaluate(
+        (
+            process_detection(timestamp=LISTENER_TIMESTAMP - WINDOW),
+            listener_detection(),
+        ),
+        WINDOW,
+    )
+
+    assert len(result) == 1
+
+
+def test_counts_duplicate_detection_id_once_in_aggregate_score() -> None:
+    duplicate_detection_id = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    result = ProcessListenerActivityStrategy().evaluate(
+        (
+            process_detection(detection_id=duplicate_detection_id, score_contribution=60),
+            listener_detection(detection_id=duplicate_detection_id, score_contribution=60),
+        ),
+        WINDOW,
+    )
+
+    assert result[0].detection_ids == (duplicate_detection_id,)
+    assert result[0].aggregate_score == 60
+
+
+def test_clamps_aggregate_score_at_100() -> None:
+    result = ProcessListenerActivityStrategy().evaluate(
+        (
+            process_detection(score_contribution=60),
+            listener_detection(score_contribution=60),
+        ),
+        WINDOW,
+    )
+
+    assert result[0].aggregate_score == 100
 
 
 def test_returns_no_result_when_two_process_identities_are_eligible() -> None:

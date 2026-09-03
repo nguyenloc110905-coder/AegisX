@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from uuid import UUID
@@ -107,7 +107,7 @@ class ProcessListenerActivityStrategy:
             return None
         if started_at.tzinfo is None or started_at.utcoffset() is None:
             return None
-        return started_at
+        return started_at.astimezone(UTC)
 
     @staticmethod
     def _is_eligible(
