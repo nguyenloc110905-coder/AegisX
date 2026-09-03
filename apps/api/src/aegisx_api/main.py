@@ -1,13 +1,16 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI
 
 from aegisx_api.api.router import router
 from aegisx_api.config import Settings, get_settings
+from aegisx_api.correlation.defaults import create_default_correlation_engine
 from aegisx_api.db.session import create_engine, create_session_factory
 from aegisx_api.detection.defaults import create_default_engine
 from aegisx_api.logging import configure_logging
+from aegisx_api.services.correlation import CorrelationService
 from aegisx_api.services.telemetry_ingestion import TelemetryIngestionService
 
 
@@ -30,7 +33,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = create_engine(resolved_settings)
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.detection_engine = create_default_engine()
-    app.state.telemetry_ingestion_service = TelemetryIngestionService(app.state.detection_engine)
+    app.state.correlation_engine = create_default_correlation_engine()
+    app.state.correlation_service = CorrelationService(app.state.correlation_engine)
+    app.state.telemetry_ingestion_service = TelemetryIngestionService(
+        app.state.detection_engine,
+        app.state.correlation_service,
+        timedelta(seconds=resolved_settings.correlation_window_seconds),
+    )
     app.include_router(router)
     return app
 

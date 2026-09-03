@@ -1,7 +1,8 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,11 +11,21 @@ from aegisx_api.models.detection import Detection
 from aegisx_api.models.device import Device
 from aegisx_api.models.event import Event
 from aegisx_api.schemas.event import EventBatchResponse, TelemetryEvent
+from aegisx_api.services.correlation import CorrelationService
+
+logger = structlog.get_logger(__name__)
 
 
 class TelemetryIngestionService:
-    def __init__(self, detection_engine: DetectionEngine) -> None:
+    def __init__(
+        self,
+        detection_engine: DetectionEngine,
+        correlation_service: CorrelationService,
+        correlation_window: timedelta,
+    ) -> None:
         self._detection_engine = detection_engine
+        self._correlation_service = correlation_service
+        self._correlation_window = correlation_window
 
     async def ingest(
         self,
@@ -29,6 +40,8 @@ class TelemetryIngestionService:
         seen_ids = set(existing_ids)
         accepted = 0
         duplicates = len(existing_ids)
+        new_detections: list[Detection] = []
+        triggering_event_ids: list[UUID] = []
 
         for envelope in envelopes:
             if envelope.id in seen_ids:
@@ -38,24 +51,39 @@ class TelemetryIngestionService:
             seen_ids.add(envelope.id)
             event = self._map_event(device.id, envelope)
             session.add(event)
+            triggering_event_ids.append(event.id)
             for result in self._detection_engine.evaluate(event):
-                session.add(
-                    Detection(
-                        device_id=result.device_id,
-                        source_event=event,
-                        rule_id=result.rule_id,
-                        timestamp=result.timestamp,
-                        severity=result.severity,
-                        score_contribution=result.score_contribution,
-                        reason=result.reason,
-                        evidence_event_ids=[
-                            str(event_id) for event_id in result.evidence_event_ids
-                        ],
-                    )
+                detection = Detection(
+                    device_id=result.device_id,
+                    source_event=event,
+                    rule_id=result.rule_id,
+                    timestamp=result.timestamp,
+                    severity=result.severity,
+                    score_contribution=result.score_contribution,
+                    reason=result.reason,
+                    evidence_event_ids=[str(event_id) for event_id in result.evidence_event_ids],
                 )
+                session.add(detection)
+                new_detections.append(detection)
             accepted += 1
 
         device.last_seen_at = datetime.now(UTC)
+        await session.flush()
+        if new_detections:
+            try:
+                async with session.begin_nested():
+                    await self._correlation_service.correlate(
+                        session,
+                        device.id,
+                        new_detections,
+                        self._correlation_window,
+                    )
+            except Exception:
+                logger.exception(
+                    "correlation_failed",
+                    device_id=str(device.id),
+                    triggering_event_ids=[str(event_id) for event_id in triggering_event_ids],
+                )
         await session.commit()
         return EventBatchResponse(accepted=accepted, duplicates=duplicates)
 
