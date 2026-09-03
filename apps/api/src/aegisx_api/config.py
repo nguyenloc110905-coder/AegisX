@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     api_version: str = "0.1.0"
     telemetry_batch_limit: int = Field(default=100, ge=1, le=1000)
     correlation_window_seconds: int = Field(default=300, ge=1, le=86400)
+    incident_evidence_window_seconds: int = Field(default=3600, ge=1, le=86400)
+    incident_advisory_lock_timeout_ms: int = Field(
+        default=2000,
+        ge=100,
+        le=30000,
+        description="Milliseconds to wait for a PostgreSQL advisory lock before failing closed.",
+    )
 
 
 @lru_cache

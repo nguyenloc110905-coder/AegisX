@@ -36,7 +36,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.detection_engine = create_default_engine()
     app.state.correlation_engine = create_default_correlation_engine()
     app.state.correlation_service = CorrelationService(app.state.correlation_engine)
-    app.state.incident_service = IncidentService()
+    app.state.incident_service = IncidentService(
+        evidence_window=timedelta(seconds=resolved_settings.incident_evidence_window_seconds),
+        lock_timeout_ms=resolved_settings.incident_advisory_lock_timeout_ms,
+    )
     app.state.telemetry_ingestion_service = TelemetryIngestionService(
         app.state.detection_engine,
         app.state.correlation_service,

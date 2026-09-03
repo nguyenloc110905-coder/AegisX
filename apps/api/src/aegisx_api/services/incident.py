@@ -15,8 +15,13 @@ logger = structlog.get_logger(__name__)
 
 
 class IncidentService:
-    def __init__(self, evidence_window: timedelta = timedelta(seconds=3600)) -> None:
+    def __init__(
+        self,
+        evidence_window: timedelta = timedelta(seconds=3600),
+        lock_timeout_ms: int = 2000,
+    ) -> None:
         self._evidence_window = evidence_window
+        self._lock_timeout_ms = lock_timeout_ms
         self._registry = registry
 
     def _hash_to_lock_id(self, grouping_key: str) -> int:
@@ -66,7 +71,9 @@ class IncidentService:
 
         try:
             # We assume this is called inside a nested transaction (savepoint)
-            await session.execute(text("SET LOCAL statement_timeout = '2000ms'"))
+            await session.execute(
+                text(f"SET LOCAL statement_timeout = '{self._lock_timeout_ms}ms'")
+            )
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id}
             )
