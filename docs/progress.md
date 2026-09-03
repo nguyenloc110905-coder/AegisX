@@ -216,7 +216,7 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ## Milestone 5B — Telemetry Fidelity & Operational Hardening
 
-Status: in progress; Tasks 1-3 complete.
+Status: in progress; Tasks 1-4 complete.
 
 ### Task 1 — Development environment
 
@@ -241,6 +241,13 @@ Status: in progress; Tasks 1-3 complete.
 - Duplicate canonical identities remain observable but cannot generate an opened event with an arbitrary PID; state records the endpoint without process attribution. Observed and transition outputs are separately bounded, and the full identity snapshot is still persisted.
 - Open/closed means endpoint presence changed between collector snapshots, not a precise kernel timestamp or proof of a TCP handshake. Missing process `create_time` prevents process-incarnation attribution but not endpoint identity.
 - Focused verification: network collector `11 passed`; all four network transition API cases passed; agent/API Ruff checks and strict mypy passed.
+
+### Task 4 — Async outbox boundary
+
+- Added `AsyncOutbox`, which opens SQLite and runs every queue operation through `asyncio.to_thread`; the runner now awaits enqueue, peek, acknowledge, quarantine, counts, and close.
+- One async lock serializes the shared SQLite connection. Cancellation waits for an in-flight worker call before releasing the lock, preventing a cancelled coroutine from allowing overlapping connection access.
+- The synchronous `Outbox` remains the single owner of schema, sequence ordering, UUID idempotency, bounded eviction, quarantine transactions, and persistence across restarts; no new service or infrastructure was introduced.
+- Focused outbox/runner verification passed `10` tests, including real ordering/idempotency/quarantine behavior, worker-thread execution, serialization, and cancellation safety. Ruff and strict mypy passed.
 
 ### Scope boundary
 

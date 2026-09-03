@@ -21,7 +21,7 @@ from aegisx_agent.config import AgentSettings
 from aegisx_agent.credentials import AgentCredentials, load_credentials, save_credentials
 from aegisx_agent.events import NormalizedEvent, Observation, normalize_observation
 from aegisx_agent.identity import load_or_create_identity
-from aegisx_agent.outbox import Outbox
+from aegisx_agent.outbox import AsyncOutbox
 
 
 class RunResult(BaseModel):
@@ -42,7 +42,7 @@ class TelemetryClient(Protocol):
 async def _deliver_batch(
     client: TelemetryClient,
     token: str,
-    outbox: Outbox,
+    outbox: AsyncOutbox,
     batch: list[NormalizedEvent],
 ) -> tuple[int, int, int]:
     try:
@@ -55,11 +55,11 @@ async def _deliver_batch(
             left = await _deliver_batch(client, token, outbox, batch[:midpoint])
             right = await _deliver_batch(client, token, outbox, batch[midpoint:])
             return left[0] + right[0], left[1] + right[1], left[2] + right[2]
-        outbox.quarantine([batch[0].id], reason=f"http_{error.status_code}")
+        await outbox.quarantine([batch[0].id], reason=f"http_{error.status_code}")
         return 0, 0, 1
     if result.accepted + result.duplicates != len(batch):
         raise RuntimeError("backend did not account for the complete event batch")
-    outbox.acknowledge([event.id for event in batch])
+    await outbox.acknowledge([event.id for event in batch])
     return result.accepted, result.duplicates, 0
 
 
@@ -87,7 +87,7 @@ async def collect_once(
     identity = load_or_create_identity(settings.state_directory / "identity.json")
     credentials_path = settings.state_directory / "credentials.json"
     credentials = load_credentials(credentials_path)
-    outbox = Outbox(
+    outbox = await AsyncOutbox.open(
         settings.state_directory / "outbox.sqlite3",
         max_events=settings.max_outbox_events,
     )
@@ -113,7 +113,7 @@ async def collect_once(
             for collector in resolved_collectors
             for observation in _flatten(collector.collect())
         ]
-        evicted = outbox.enqueue(events)
+        evicted = await outbox.enqueue(events)
         accepted = 0
         duplicates = 0
         quarantined = 0
@@ -121,7 +121,7 @@ async def collect_once(
             if credentials is None:
                 credentials = await resolved_client.register(_device_profile(identity.external_id))
                 save_credentials(credentials_path, credentials)
-            while batch := outbox.peek(settings.batch_size):
+            while batch := await outbox.peek(settings.batch_size):
                 delivered = await _deliver_batch(resolved_client, credentials.token, outbox, batch)
                 accepted += delivered[0]
                 duplicates += delivered[1]
@@ -130,7 +130,7 @@ async def collect_once(
             return RunResult(
                 accepted=accepted,
                 duplicates=duplicates,
-                queued=outbox.count(),
+                queued=await outbox.count(),
                 evicted=evicted,
                 quarantined=quarantined,
                 delivery_status="deferred",
@@ -138,12 +138,12 @@ async def collect_once(
         return RunResult(
             accepted=accepted,
             duplicates=duplicates,
-            queued=outbox.count(),
+            queued=await outbox.count(),
             evicted=evicted,
             quarantined=quarantined,
             delivery_status="delivered",
         )
     finally:
-        outbox.close()
+        await outbox.close()
         if owned_client and isinstance(resolved_client, AegisXClient):
             await resolved_client.close()

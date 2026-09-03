@@ -12,7 +12,7 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - FastAPI liveness/readiness, Linux device registration, bearer-token authentication, and typed idempotent telemetry ingestion.
 - Async SQLAlchemy Device/Event/Detection/CorrelationCandidate persistence and four Alembic migrations.
 - Linux system snapshots plus process and network snapshot-transition collectors.
-- Agent normalization, registration, local identity/credential persistence, bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
+- Agent normalization, registration, local identity/credential persistence, async-adapted bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
 - Schema-version-1 events: system status; process started/exited/resource usage; and network listener/connection observed/opened/closed.
 - FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection/CorrelationCandidate integration coverage.
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OBSERVED` rules.
@@ -174,7 +174,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 2. `apps/agent/src/aegisx_agent/runner.py` — `collect_once()` loads/creates `identity.json`, loads `credentials.json`, and opens `outbox.sqlite3` under the configured state directory.
 3. `runner.py` — `SystemCollector`, `ProcessCollector`, and `NetworkCollector` read current OS state and return one or more `Observation` values.
 4. `apps/agent/src/aegisx_agent/events.py` — `normalize_observation()` adds event UUID, UTC timestamp, and schema version.
-5. `apps/agent/src/aegisx_agent/outbox.py` — `Outbox.enqueue()` writes every normalized event before network access and evicts oldest rows above the configured bound.
+5. `apps/agent/src/aegisx_agent/outbox.py` — `AsyncOutbox.enqueue()` offloads serialized SQLite work; underlying `Outbox.enqueue()` writes every normalized event before network access and evicts oldest rows above the configured bound.
 6. If credentials are missing, `runner.py` builds `DeviceProfile`; `AegisXClient.register()` sends it to `POST /api/v1/devices/register`.
 7. `apps/api/src/aegisx_api/schemas/device.py` validates the registration body. `register_device()` in `api/devices.py` creates a random token, stores only its SHA-256 digest in `Device`, commits, and returns the plaintext token once.
 8. `apps/agent/src/aegisx_agent/credentials.py` — `save_credentials()` stores device ID/token locally with mode `0600`.
@@ -223,7 +223,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | WifiCollector | Not implemented | No source file/class. |
 | Normalization | Implemented | `events.py: normalize_observation()`. |
 | API client | Implemented | `api_client.py: AegisXClient`; async register/send/HTTP classification. |
-| Local queue | Implemented | `outbox.py: Outbox`; bounded private SQLite pending and quarantine tables. |
+| Local queue | Implemented | `outbox.py: Outbox`, `AsyncOutbox`; bounded private SQLite pending/quarantine tables with serialized worker-thread access from the async runner. |
 | Device identity | Implemented | `identity.py: load_or_create_identity()`; stable UUID, exclusive mode-0600 creation. |
 | Credentials | Implemented | `credentials.py`; Pydantic model and no-follow mode-0600 write. |
 | Periodic operation | Implemented | `service.py: run_periodically()`; bounded exponential delay and recovery reset. |
@@ -238,8 +238,8 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | B | `runner.py: collect_once()` combines identity, credentials, collector orchestration, queueing, registration, delivery, and error policy. | Working but already broad; should be reviewed before more agent subsystems accumulate. |
 | C | The collector interface only exposes synchronous `collect()`, not `start()/stop()`. | Reasonable for polling snapshots; event-driven collectors may require a second interface later. |
 | C | Agent transport models are flexible while API models are discriminated/typed. | Reasonable trust-boundary validation, but agent can queue invalid events that API later quarantines. |
-| C | SQLite outbox calls are synchronous inside an async runner. | Simple and acceptable at present load, but can block the event loop under slow disk/large queues. |
-| C | Network events are observations only; no persisted socket comparison exists. | Names are now truthful, but future opened/closed rules require explicit state tracking. |
+| C | SQLite outbox uses one connection behind an async adapter rather than a native async driver. | Disk calls no longer block the event loop and remain serialized; one slow SQLite call still delays later outbox calls by design. |
+| C | Network transitions identify endpoint presence, not kernel socket objects or process incarnations. | PID/create-time visibility is insufficient for stronger attribution; duplicate endpoints suppress arbitrary opened attribution. |
 | C | Most API tests use `Base.metadata.create_all()` with SQLite. | Useful unit isolation; the core flow now also has real PostgreSQL integration coverage. |
 | C | The correlation model relationship test reads objects held in the same SQLAlchemy identity map. | Constraints and PostgreSQL integration are covered, but an independent fresh-session ORM round-trip test is deferred. |
 | C | Correlation logs all accepted batch Event IDs and persists a generic hardcoded reason for the first strategy. | Diagnostic IDs can include non-detections; future strategy-specific reasons need a result-level reason contract. |
@@ -258,7 +258,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | Logging | Partial | API/agent `logging.py`, agent `service.py` | Structlog processors and the limited events currently emitted. |
 | PostgreSQL | Yes | `compose.yaml` | Container configuration, health, volume, loopback exposure. |
 | SQLAlchemy | Yes | API `db/`, `models/` | Declarative mappings, engine/session factory, relationships, indexes. |
-| Async | Yes | API routes/client/runner | Async HTTP and database I/O; SQLite outbox itself remains synchronous. |
+| Async | Yes | API routes/client/runner | Async HTTP/database I/O; synchronous SQLite internals run off-loop behind `AsyncOutbox` serialization. |
 | Session | Yes | `api/dependencies.py: get_database_session()` | One async session dependency shared within a request dependency graph. |
 | Model | Yes | `models/device.py`, `models/event.py` | Relational identity, fields, constraints, relationships. |
 | Migration | Yes | `alembic/env.py`, `alembic/versions/` | Explicit schema evolution independent from application startup. |

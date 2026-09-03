@@ -1,8 +1,21 @@
+import asyncio
 import os
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from aegisx_agent.events import NormalizedEvent
+
+
+async def _run_in_thread[**P, T](operation: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+    task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        finally:
+            raise
 
 
 class Outbox:
@@ -10,7 +23,7 @@ class Outbox:
         if max_events < 1:
             raise ValueError("max_events must be positive")
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._connection = sqlite3.connect(path)
+        self._connection = sqlite3.connect(path, check_same_thread=False)
         os.chmod(path, 0o600)
         self._max_events = max_events
         self._connection.execute("PRAGMA journal_mode=WAL")
@@ -121,3 +134,46 @@ class Outbox:
 
     def close(self) -> None:
         self._connection.close()
+
+
+class AsyncOutbox:
+    def __init__(self, outbox: Outbox) -> None:
+        self._outbox = outbox
+        self._lock = asyncio.Lock()
+
+    @classmethod
+    async def open(cls, path: Path, max_events: int) -> "AsyncOutbox":
+        outbox = await _run_in_thread(Outbox, path, max_events)
+        return cls(outbox)
+
+    async def enqueue(self, events: list[NormalizedEvent]) -> int:
+        async with self._lock:
+            return await _run_in_thread(self._outbox.enqueue, events)
+
+    async def peek(self, limit: int) -> list[NormalizedEvent]:
+        async with self._lock:
+            return await _run_in_thread(self._outbox.peek, limit)
+
+    async def acknowledge(self, event_ids: list[str]) -> None:
+        async with self._lock:
+            await _run_in_thread(self._outbox.acknowledge, event_ids)
+
+    async def quarantine(self, event_ids: list[str], reason: str) -> None:
+        async with self._lock:
+            await _run_in_thread(self._outbox.quarantine, event_ids, reason)
+
+    async def count(self) -> int:
+        async with self._lock:
+            return await _run_in_thread(self._outbox.count)
+
+    async def quarantine_count(self) -> int:
+        async with self._lock:
+            return await _run_in_thread(self._outbox.quarantine_count)
+
+    async def quarantine_reasons(self) -> list[str]:
+        async with self._lock:
+            return await _run_in_thread(self._outbox.quarantine_reasons)
+
+    async def close(self) -> None:
+        async with self._lock:
+            await _run_in_thread(self._outbox.close)
