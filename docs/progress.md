@@ -216,7 +216,7 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ## Milestone 5B — Telemetry Fidelity & Operational Hardening
 
-Status: in progress; Tasks 1-4 complete.
+Status: implementation complete through Task 5; final verification in progress.
 
 ### Task 1 — Development environment
 
@@ -248,6 +248,14 @@ Status: in progress; Tasks 1-4 complete.
 - One async lock serializes the shared SQLite connection. Cancellation waits for an in-flight worker call before releasing the lock, preventing a cancelled coroutine from allowing overlapping connection access.
 - The synchronous `Outbox` remains the single owner of schema, sequence ordering, UUID idempotency, bounded eviction, quarantine transactions, and persistence across restarts; no new service or infrastructure was introduced.
 - Focused outbox/runner verification passed `10` tests, including real ordering/idempotency/quarantine behavior, worker-thread execution, serialization, and cancellation safety. Ruff and strict mypy passed.
+
+### Task 5 — Correlation operational observability
+
+- Correlation evaluation/persistence semantics remain unchanged. The service now exposes only the selected strategy IDs needed for observability.
+- After the authoritative outer commit, ingestion emits one bounded `correlation_outcome` record with strategy IDs, safe device ID, outcome, evidence commit status, and candidate count or exception-class failure category.
+- Failure logs set `evidence_committed=true` only after Event/Detection commit succeeds. An outer-commit failure emits no false survival claim.
+- Removed accepted Event UUID lists and avoided tokens, command lines, raw telemetry, metadata, exception messages, and payload-bearing stack output.
+- Focused verification passed four outcome/failure-boundary cases; API Ruff and strict mypy passed.
 
 ### Scope boundary
 

@@ -22,3 +22,7 @@ class CorrelationEngine:
             for result in strategy.evaluate(evidence, window):
                 results_by_key.setdefault(result.correlation_key, result)
         return tuple(results_by_key[key] for key in sorted(results_by_key))
+
+    def strategy_ids_for(self, new_detections: Sequence[Detection]) -> tuple[str, ...]:
+        rule_ids = frozenset(detection.rule_id for detection in new_detections)
+        return tuple(strategy.strategy_id for strategy in self._registry.strategies_for(rule_ids))

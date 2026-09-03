@@ -22,7 +22,7 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 
 - Process lifecycle completeness under OS races: starts and exits require complete consecutive snapshots, so any inaccessible/vanished record deliberately defers lifecycle transitions until a later complete comparison.
 - Network lifecycle fidelity depends on complete snapshots; malformed or denied OS data intentionally defers transition comparison.
-- Operational logging: JSON cycle logging exists for the agent and structlog is configured in the API, but there is no request correlation middleware or centralized exception logging.
+- Operational logging beyond correlation: JSON agent cycle logs and bounded correlation outcome logs exist, but there is no request correlation middleware or centralized exception logging.
 - Agent service lifecycle: continuous CLI execution exists, but no systemd unit/install/uninstall flow exists.
 - API architecture: telemetry ingestion has a service boundary; device registration still persists directly in its route and there are no repository modules.
 - Integration coverage: the core Device/Event/Detection/CorrelationCandidate flow has automated PostgreSQL coverage; most fast API tests still use SQLite for isolation.
@@ -181,7 +181,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 9. `runner.py` reads oldest outbox batches. `AegisXClient.send_events()` sends JSON plus `Authorization: Bearer <token>` to `POST /api/v1/telemetry/events`.
 10. `apps/api/src/aegisx_api/api/dependencies.py` — `get_database_session()` yields an `AsyncSession`; `get_current_device()` hashes the bearer token, queries an active Device, and performs `compare_digest` before accepting it.
 11. `apps/api/src/aegisx_api/schemas/event.py` — `EventBatchRequest` and the discriminated `TelemetryEvent` union validate the complete body before handler execution.
-12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, sets device `last_seen_at`, flushes Event/Detection evidence, runs correlation in a nested savepoint, and commits the authoritative outer transaction. A correlation-only failure logs every accepted triggering Event ID (including non-detections) and leaves Event/Detection evidence committed.
+12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, sets device `last_seen_at`, flushes Event/Detection evidence, runs correlation in a nested savepoint, and commits the authoritative outer transaction. After a successful outer commit it logs bounded strategy/device/outcome metadata; a correlation-only failure leaves Event/Detection evidence committed without logging raw event IDs or payloads.
 13. The API returns HTTP 202 with counts. `_deliver_batch()` in the agent acknowledges accounted event IDs, leaving zero pending rows on full success.
 14. Network/timeout/429/5xx errors leave events pending. 400/422 responses recursively split batches and move isolated single bad events to quarantine. 401/403 propagate without deleting queued evidence.
 
@@ -242,7 +242,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | C | Network transitions identify endpoint presence, not kernel socket objects or process incarnations. | PID/create-time visibility is insufficient for stronger attribution; duplicate endpoints suppress arbitrary opened attribution. |
 | C | Most API tests use `Base.metadata.create_all()` with SQLite. | Useful unit isolation; the core flow now also has real PostgreSQL integration coverage. |
 | C | The correlation model relationship test reads objects held in the same SQLAlchemy identity map. | Constraints and PostgreSQL integration are covered, but an independent fresh-session ORM round-trip test is deferred. |
-| C | Correlation logs all accepted batch Event IDs and persists a generic hardcoded reason for the first strategy. | Diagnostic IDs can include non-detections; future strategy-specific reasons need a result-level reason contract. |
+| C | Correlation persists a generic hardcoded reason for the first strategy. | Future strategy-specific reasons need a result-level reason contract; operational logs are now bounded and payload-free. |
 | D | Device token loss cannot self-recover: re-registration conflicts on unique external ID and there is no rotation/re-enrollment flow. | Operational gap that should be designed before wider deployment. |
 
 ## 9. Learning map
@@ -255,7 +255,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | HTTP request | Yes | `api/devices.py`, `api/telemetry.py` | FastAPI parameter parsing, dependencies, status codes, response models. |
 | Pydantic | Yes | `schemas/*.py`, agent `events.py` | Validation models, bounds, literals, discriminated unions, serialization. |
 | Configuration | Yes | API `config.py`, agent `config.py` | Environment aliases, defaults, constraints, cached API settings. |
-| Logging | Partial | API/agent `logging.py`, agent `service.py` | Structlog processors and the limited events currently emitted. |
+| Logging | Partial | API/agent `logging.py`, agent `service.py`, API `telemetry_ingestion.py` | JSON processors, agent cycle events, and post-commit bounded correlation outcomes. |
 | PostgreSQL | Yes | `compose.yaml` | Container configuration, health, volume, loopback exposure. |
 | SQLAlchemy | Yes | API `db/`, `models/` | Declarative mappings, engine/session factory, relationships, indexes. |
 | Async | Yes | API routes/client/runner | Async HTTP/database I/O; synchronous SQLite internals run off-loop behind `AsyncOutbox` serialization. |

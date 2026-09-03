@@ -22,6 +22,9 @@ class CorrelationService:
     def __init__(self, engine: CorrelationEngine) -> None:
         self._engine = engine
 
+    def strategy_ids_for(self, new_detections: Sequence[Detection]) -> tuple[str, ...]:
+        return self._engine.strategy_ids_for(new_detections)
+
     async def correlate(
         self,
         session: AsyncSession,

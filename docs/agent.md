@@ -1,6 +1,6 @@
 # Endpoint Agent
 
-Status: Milestone 5B process/network lifecycle and async outbox hardening implemented; correlation observability remains in progress.
+Status: Milestone 5B implementation complete; final cross-project verification is in progress.
 
 The Linux agent runs independently of the UI. It currently owns stable UUID identity, private token persistence, configurable one-shot collection, normalization, batching, and API delivery. `SystemCollector` reports host/kernel/uptime/CPU/RAM. `ProcessCollector` persists a private `(PID, create_time)` baseline, emits `process.started` for a new incarnation and `process.exited` only when that incarnation is absent from the next complete snapshot, and emits bounded resource observations. PID reuse produces an exit for the old incarnation and a start for the new one. If enumeration or even one process lookup is incomplete, lifecycle comparison and baseline replacement are skipped; a failed lookup is never treated as exit evidence. The output cap does not cap the identity scan. The baseline is atomically replaced after file and directory synchronization and remains private mode `0600`.
 

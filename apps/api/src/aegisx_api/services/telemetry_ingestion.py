@@ -41,7 +41,10 @@ class TelemetryIngestionService:
         accepted = 0
         duplicates = len(existing_ids)
         new_detections: list[Detection] = []
-        triggering_event_ids: list[UUID] = []
+        correlation_outcome: str | None = None
+        correlation_strategy_ids: tuple[str, ...] = ()
+        correlation_candidate_count = 0
+        correlation_failure_category: str | None = None
 
         for envelope in envelopes:
             if envelope.id in seen_ids:
@@ -51,7 +54,6 @@ class TelemetryIngestionService:
             seen_ids.add(envelope.id)
             event = self._map_event(device.id, envelope)
             session.add(event)
-            triggering_event_ids.append(event.id)
             for result in self._detection_engine.evaluate(event):
                 detection = Detection(
                     device_id=result.device_id,
@@ -71,20 +73,42 @@ class TelemetryIngestionService:
         await session.flush()
         if new_detections:
             try:
+                correlation_strategy_ids = self._correlation_service.strategy_ids_for(
+                    new_detections
+                )
                 async with session.begin_nested():
-                    await self._correlation_service.correlate(
+                    correlation_candidate_count = await self._correlation_service.correlate(
                         session,
                         device.id,
                         new_detections,
                         self._correlation_window,
                     )
-            except Exception:
-                logger.exception(
-                    "correlation_failed",
-                    device_id=str(device.id),
-                    triggering_event_ids=[str(event_id) for event_id in triggering_event_ids],
+                correlation_outcome = (
+                    "candidate_created" if correlation_candidate_count else "no_candidate"
                 )
+            except Exception as error:
+                correlation_outcome = "failed"
+                correlation_failure_category = type(error).__name__
         await session.commit()
+        if correlation_outcome is not None:
+            log_context = {
+                "strategy_ids": list(correlation_strategy_ids),
+                "device_id": str(device.id),
+                "outcome": correlation_outcome,
+                "evidence_committed": True,
+            }
+            if correlation_failure_category is not None:
+                logger.error(
+                    "correlation_outcome",
+                    **log_context,
+                    failure_category=correlation_failure_category,
+                )
+            else:
+                logger.info(
+                    "correlation_outcome",
+                    **log_context,
+                    candidate_count=correlation_candidate_count,
+                )
         return EventBatchResponse(accepted=accepted, duplicates=duplicates)
 
     @staticmethod

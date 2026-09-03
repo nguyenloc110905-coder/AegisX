@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from structlog.testing import capture_logs
 
 from aegisx_api.config import Settings
 from aegisx_api.db.base import Base
@@ -96,6 +97,9 @@ def listener_observed_event(event_id: str, *, timestamp: datetime) -> dict:
 
 
 class RaisingCorrelationService:
+    def strategy_ids_for(self, new_detections: Sequence[Detection]) -> tuple[str, ...]:
+        return ("TEST_PARTIAL_FAILURE",)
+
     async def correlate(
         self,
         session: AsyncSession,
@@ -546,16 +550,19 @@ async def test_correlation_failure_preserves_authoritative_event_and_detection_r
     )
     token = await register(client)
     timestamp = datetime(2026, 9, 3, 2, 0, tzinfo=UTC)
-    response = await client.post(
-        "/api/v1/telemetry/events",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "events": [
-                process_started_event(str(uuid4()), timestamp=timestamp, started_at=timestamp),
-                listener_observed_event(str(uuid4()), timestamp=timestamp + timedelta(minutes=1)),
-            ]
-        },
-    )
+    with capture_logs() as logs:
+        response = await client.post(
+            "/api/v1/telemetry/events",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "events": [
+                    process_started_event(str(uuid4()), timestamp=timestamp, started_at=timestamp),
+                    listener_observed_event(
+                        str(uuid4()), timestamp=timestamp + timedelta(minutes=1)
+                    ),
+                ]
+            },
+        )
 
     assert response.status_code == 202
     assert response.json() == {"accepted": 2, "duplicates": 0}
@@ -568,6 +575,82 @@ async def test_correlation_failure_preserves_authoritative_event_and_detection_r
     assert event_count == 2
     assert detection_count == 2
     assert candidate_count == 0
+    failure_log = next(entry for entry in logs if entry["event"] == "correlation_outcome")
+    assert failure_log == {
+        "event": "correlation_outcome",
+        "log_level": "error",
+        "strategy_ids": ["TEST_PARTIAL_FAILURE"],
+        "device_id": failure_log["device_id"],
+        "outcome": "failed",
+        "failure_category": "RuntimeError",
+        "evidence_committed": True,
+    }
+    assert "triggering_event_ids" not in failure_log
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("include_listener", "expected_outcome", "expected_candidate_count"),
+    [(False, "no_candidate", 0), (True, "candidate_created", 1)],
+)
+async def test_correlation_success_logs_bounded_outcome_after_commit(
+    app_and_client,
+    include_listener: bool,
+    expected_outcome: str,
+    expected_candidate_count: int,
+) -> None:
+    _, client = app_and_client
+    token = await register(client)
+    timestamp = datetime(2026, 9, 3, 3, 0, tzinfo=UTC)
+    events = [process_started_event(str(uuid4()), timestamp=timestamp, started_at=timestamp)]
+    if include_listener:
+        events.append(
+            listener_observed_event(str(uuid4()), timestamp=timestamp + timedelta(minutes=1))
+        )
+
+    with capture_logs() as logs:
+        response = await client.post(
+            "/api/v1/telemetry/events",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"events": events},
+        )
+
+    assert response.status_code == 202
+    outcome_log = next(entry for entry in logs if entry["event"] == "correlation_outcome")
+    assert outcome_log["log_level"] == "info"
+    assert outcome_log["strategy_ids"] == ["PROCESS_LISTENER_ACTIVITY"]
+    assert outcome_log["outcome"] == expected_outcome
+    assert outcome_log["candidate_count"] == expected_candidate_count
+    assert outcome_log["evidence_committed"] is True
+    assert "triggering_event_ids" not in outcome_log
+
+
+@pytest.mark.asyncio
+async def test_correlation_failure_does_not_claim_evidence_survived_failed_outer_commit(
+    app_and_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, client = app_and_client
+    app.state.telemetry_ingestion_service = TelemetryIngestionService(
+        app.state.detection_engine,
+        RaisingCorrelationService(),
+        timedelta(seconds=app.state.settings.correlation_window_seconds),
+    )
+    token = await register(client)
+
+    async def fail_commit(self: AsyncSession) -> None:
+        raise RuntimeError("forced outer commit failure")
+
+    monkeypatch.setattr(AsyncSession, "commit", fail_commit)
+    with capture_logs() as logs:
+        with pytest.raises(RuntimeError, match="forced outer commit failure"):
+            await client.post(
+                "/api/v1/telemetry/events",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"events": [process_started_event(str(uuid4()))]},
+            )
+
+    assert not [entry for entry in logs if entry.get("event") == "correlation_outcome"]
 
 
 @pytest.mark.asyncio
