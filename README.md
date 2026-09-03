@@ -27,7 +27,7 @@ scripts/        Repository checks and later safe validation helpers
 
 ## Current implementation
 
-Milestones 0-3 are implemented: repository foundation, PostgreSQL 17, typed FastAPI ingestion, and a Linux agent with real process/system/network collection, private identity, bounded offline buffering, and periodic retry. Detection, correlation, UI, AI integration, and validation scenarios do not exist yet.
+Milestones 0-5A are implemented: repository foundation, PostgreSQL 17, typed FastAPI ingestion, a Linux agent with real process/system/network collection, deterministic Detection rules, and a narrow evidence-first CorrelationCandidate foundation. The implemented correlation associates a recent process identity with a listener snapshot; it does not create an Incident or conclude malicious activity. UI, AI integration, validation scenarios, Incident workflow, and later detection packs do not exist yet.
 
 See [progress](docs/progress.md) for verification evidence and known limitations.
 

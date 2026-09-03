@@ -185,3 +185,27 @@ No correlation, incidents, AI, notifications, UI, ransomware, brute-force, port-
 - API and agent Ruff format/lint — passed.
 - API mypy — passed on 33 source files; agent mypy — passed on 16 source files.
 - PostgreSQL Alembic upgrade/current/heads — `0003_detection_foundation (head)`.
+
+## Milestone 5A — Correlation Engine Foundation
+
+Status: implemented as one deterministic, evidence-first Candidate strategy; incident workflow remains unimplemented.
+
+### Completed work
+
+- Added a typed, registry-indexed correlation engine and the `PROCESS_LISTENER_ACTIVITY` strategy over persisted `PROCESS_STARTED` and `LISTENER_OBSERVED` Detections.
+- Uses the canonical process identity `(device_id, pid, started_at)`, an inclusive configured window, and an exact-one-eligible-identity rule to reject ambiguous relationships and old PID reuse outside the window.
+- Added `CorrelationCandidate` persistence under Alembic `0004_correlation_foundation`, including relational Detection/Event evidence and a globally unique deterministic SHA-256 key.
+- Added idempotency: one immutable Candidate per process identity; duplicate retries/repeated listener snapshots do not append evidence or inflate the score.
+- Integrated correlation after Event/Detection flush in a nested savepoint. A correlation-only failure rolls back Candidate work, logs the failure, and still commits valid authoritative Event/Detection evidence.
+- Kept the behavior neutral: the current pair is low confidence with score 5; it associates a listener snapshot with a recent process identity and does not label it malicious, newly opened, or an Incident.
+
+### Known limitations
+
+- Candidate creation intentionally loses later listener/repeated-snapshot timeline detail until correlation lifecycle semantics are designed.
+- There is no Candidate API, background reconciliation after a correlation-only failure, device-risk aggregate, incident conversion, AI, notification, or UI behavior.
+- The correlation failure log currently lists every accepted Event ID in its triggering batch, including accepted Events without a Detection.
+- The service currently persists a generic hardcoded reason for the first strategy; future strategies need a result-level reason contract. The model relationship test also needs a fresh-session round-trip assertion rather than relying on the current SQLAlchemy identity map.
+
+### Verification
+
+Final Milestone 5A API/agent/test/type/migration/PostgreSQL results are recorded in the completion report for this milestone.

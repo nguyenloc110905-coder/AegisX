@@ -1,21 +1,22 @@
 # AegisX Current Implementation Map
 
-This document maps the source code after the pre-Milestone-4 alignment patch. It does not treat plans, backlogs, or README claims as implementation evidence.
+This document maps the source code through the Milestone 5A correlation foundation. It does not treat plans, backlogs, or README claims as implementation evidence.
 
 ## 1. Current status
 
-The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, and the Milestone 4 detection foundation with its first two rules. Later detection packs and correlation have not started.
+The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, the Milestone 4 detection foundation with its first two rules, and a narrow Milestone 5A correlation foundation. Later detection packs and incident workflow have not started.
 
 ### Implemented
 
 - PostgreSQL 17 development service through Compose.
 - FastAPI liveness/readiness, Linux device registration, bearer-token authentication, and typed idempotent telemetry ingestion.
-- Async SQLAlchemy Device/Event/Detection persistence and three Alembic migrations.
+- Async SQLAlchemy Device/Event/Detection/CorrelationCandidate persistence and four Alembic migrations.
 - Linux system, process, and network snapshot collectors.
 - Agent normalization, registration, local identity/credential persistence, bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
 - Schema-version-1 events: `system.status`, `process.started`, `process.resource_usage`, `network.listener_observed`, and `network.connection_observed`.
-- FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection integration coverage.
+- FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection/CorrelationCandidate integration coverage.
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OBSERVED` rules.
+- Deterministic `PROCESS_LISTENER_ACTIVITY` correlation with bounded evidence loading, a configurable inclusive window, relational Candidate evidence, savepoint-isolated failure handling, and one Candidate per canonical process identity.
 
 ### Partially implemented
 
@@ -24,20 +25,20 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - Operational logging: JSON cycle logging exists for the agent and structlog is configured in the API, but there is no request correlation middleware or centralized exception logging.
 - Agent service lifecycle: continuous CLI execution exists, but no systemd unit/install/uninstall flow exists.
 - API architecture: telemetry ingestion has a service boundary; device registration still persists directly in its route and there are no repository modules.
-- Integration coverage: the core Device/Event/Detection flow has automated PostgreSQL coverage; most fast API tests still use SQLite for isolation.
+- Integration coverage: the core Device/Event/Detection/CorrelationCandidate flow has automated PostgreSQL coverage; most fast API tests still use SQLite for isolation.
 
 ### Planned only / not implemented
 
 - File, service, persistence, authentication-log, DNS, Wi-Fi, and LAN collectors.
-- Later detection packs, correlation, device-level risk aggregation, incidents, incident timelines, and AI analysis.
+- Later detection packs, device-level risk aggregation, incidents, incident timelines, and AI analysis.
 - WebSocket, notifications, web application, attack-validation framework, coverage metrics, and systemd packaging.
 - Device listing/status APIs, event query APIs, incident APIs, retention policy, token rotation/revocation API, TLS deployment, and API container image.
 
 ### Verified checks
 
-- API: 29 pytest tests pass with PostgreSQL integration enabled; Ruff format/lint pass; mypy passes on 33 source files.
+- API verification is recorded in the Milestone 5A completion report; it includes the PostgreSQL Candidate integration flow, Ruff format/lint, and strict mypy.
 - Agent: 25 pytest tests pass; Ruff format/lint pass; mypy passes on 16 source files.
-- Alembic exposes one head: `0003_detection_foundation`.
+- Alembic exposes one head: `0004_correlation_foundation`.
 
 ## 2. Important project tree
 
@@ -55,14 +56,16 @@ AegisX/
 │   │   │   └── versions/
 │   │   │       ├── 0001_device_event.py # Creates Device/Event storage.
 │   │   │       ├── 0002_network_fields.py # Adds indexed network correlation fields.
-│   │   │       └── 0003_detection_foundation.py # Creates Detection storage.
+│   │   │       ├── 0003_detection_foundation.py # Creates Detection storage.
+│   │   │       └── 0004_correlation_foundation.py # Creates Candidate and evidence storage.
 │   │   ├── src/aegisx_api/
 │   │   │   ├── main.py                  # FastAPI factory and module-level ASGI app.
 │   │   │   ├── config.py                # Pydantic API settings.
 │   │   │   ├── logging.py               # API structlog configuration.
 │   │   │   ├── security.py              # Device-token generation and SHA-256 digest.
 │   │   │   ├── detection/                # Rule contract, registry, engine, scoring, first rules.
-│   │   │   ├── services/                 # Transactional telemetry/detection ingestion.
+│   │   │   ├── correlation/              # Strategy contract, registry, engine, process/listener strategy.
+│   │   │   ├── services/                 # Transactional telemetry/detection ingestion and Candidate persistence.
 │   │   │   ├── api/
 │   │   │   │   ├── router.py            # Combines health/device/telemetry routers.
 │   │   │   │   ├── health.py            # Liveness and database readiness routes.
@@ -75,7 +78,8 @@ AegisX/
 │   │   │   ├── models/
 │   │   │   │   ├── device.py            # Device SQLAlchemy model.
 │   │   │   │   ├── event.py             # Event SQLAlchemy model and indexes.
-│   │   │   │   └── detection.py         # Detection evidence and score contributions.
+│   │   │   │   ├── detection.py         # Detection evidence and score contributions.
+│   │   │   │   └── correlation.py       # Candidate model and relational evidence associations.
 │   │   │   └── schemas/
 │   │   │       ├── device.py             # Registration request/response models.
 │   │   │       └── event.py              # Discriminated event payload/envelope models.
@@ -132,23 +136,23 @@ AegisX/
 
 ### Database
 
-**Status: implemented.** Async SQLAlchemy stores `Device`, `Event`, and `Detection` in PostgreSQL. Alembic owns the production schema. API tests also create the same metadata in temporary SQLite databases for isolation.
+**Status: implemented.** Async SQLAlchemy stores `Device`, `Event`, `Detection`, and `CorrelationCandidate` in PostgreSQL. Alembic owns the production schema. API tests also create the same metadata in temporary SQLite databases for isolation.
 
 ### Detection Engine
 
-**Status: foundation implemented.** `detection/rules/base.py` defines the contract; `registry.py` indexes explicit rule registrations; `engine.py` evaluates only relevant rules; `defaults.py` composes the process/listener rules. `TelemetryIngestionService` evaluates each new Event and persists its Detections in the same transaction. No correlation or incident behavior exists.
+**Status: foundation implemented.** `detection/rules/base.py` defines the contract; `registry.py` indexes explicit rule registrations; `engine.py` evaluates only relevant rules; `defaults.py` composes the process/listener rules. `TelemetryIngestionService` evaluates each new Event and persists its Detections in the authoritative outer transaction. Detection is not an Incident.
 
 ### Risk Scoring
 
-**Status: foundation implemented.** Every rule match carries a deterministic contribution persisted on its Detection. `calculate_risk_score()` sums results and clamps at 100. No device-level/windowed aggregate exists.
+**Status: foundation implemented.** Every rule match carries a deterministic contribution persisted on its Detection. `calculate_risk_score()` sums results and clamps at 100. The Candidate strategy separately sums unique related Detection contributions and clamps at 100. Neither is malware probability or a persisted device-level risk aggregate.
 
 ### Correlation Engine
 
-**Status: not implemented.** Indexed/promoted process and network fields prepare data for correlation, but no correlation function executes.
+**Status: Milestone 5A foundation implemented.** `correlation/` contains a registry-indexed engine and the `PROCESS_LISTENER_ACTIVITY` strategy. `services/correlation.py` loads same-device, bounded relevant evidence and persists one idempotent Candidate per `(strategy_id, device_id, pid, started_at)`. The window is `Settings.correlation_window_seconds` (default 300 seconds; inclusive). Multiple eligible canonical process identities make the result ambiguous. A nested savepoint isolates correlation failures so valid Event/Detection evidence still commits. See [correlation-engine.md](correlation-engine.md). Correlation is neither an Incident nor an attack conclusion.
 
 ### Detection
 
-**Status: implemented.** `models/detection.py` stores the source Event FK, Device FK, rule, timestamp, severity, score contribution, reason, and evidence UUIDs. Alembic `0003_detection_foundation` owns the table.
+**Status: implemented.** `models/detection.py` stores the source Event FK, Device FK, rule, timestamp, severity, score contribution, reason, and evidence UUIDs. Alembic `0003_detection_foundation` owns the table. `models/correlation.py` stores Candidate metadata and Candidate-to-Detection/Event evidence relations under `0004_correlation_foundation`; a Candidate is not an Incident.
 
 ### Incident
 
@@ -177,7 +181,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 9. `runner.py` reads oldest outbox batches. `AegisXClient.send_events()` sends JSON plus `Authorization: Bearer <token>` to `POST /api/v1/telemetry/events`.
 10. `apps/api/src/aegisx_api/api/dependencies.py` — `get_database_session()` yields an `AsyncSession`; `get_current_device()` hashes the bearer token, queries an active Device, and performs `compare_digest` before accepting it.
 11. `apps/api/src/aegisx_api/schemas/event.py` — `EventBatchRequest` and the discriminated `TelemetryEvent` union validate the complete body before handler execution.
-12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, maps results to Detection rows, updates device `last_seen_at`, and commits the Event/Detection transaction.
+12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, flushes Event/Detection evidence, runs correlation in a nested savepoint, updates device `last_seen_at`, and commits the authoritative outer transaction. A correlation-only failure logs every accepted triggering Event ID (including non-detections) and leaves Event/Detection evidence committed.
 13. The API returns HTTP 202 with counts. `_deliver_batch()` in the agent acknowledges accounted event IDs, leaving zero pending rows on full success.
 14. Network/timeout/429/5xx errors leave events pending. 400/422 responses recursively split batches and move isolated single bad events to quarantine. 401/403 propagate without deleting queued evidence.
 
@@ -202,9 +206,9 @@ The most complete implemented flow is one agent collection cycle through Postgre
 - `db/session.py` uses `create_async_engine(..., pool_pre_ping=True)` and `async_sessionmaker(..., expire_on_commit=False)`. `session_scope()` exists but is currently unused; request sessions come from `get_database_session()`.
 - `Device` has identity/platform fields, unique token digest, active flag, timestamps, and a one-to-many Event relationship.
 - `Event` has envelope fields, JSON payload/metadata, process fields, network fields, and device/time/process/network indexes.
-- No repository or service implementation exists. `register_device()` and `ingest_events()` access SQLAlchemy directly.
-- `0001_device_event` creates Device/Event, `0002_network_fields` adds network columns/indexes, and `0003_detection_foundation` creates Detection storage. Alembic async environment loads `Base.metadata` and settings.
-- Fast persistence/API tests use SQLite. A marked integration test requires `AEGISX_TEST_POSTGRES_URL` and validates registration, authenticated ingestion, promoted fields, and cleanup against PostgreSQL after Alembic migration.
+- No repository modules exist. `register_device()` still accesses SQLAlchemy directly, while `TelemetryIngestionService` owns the transactional telemetry/detection/correlation persistence flow.
+- `0001_device_event` creates Device/Event, `0002_network_fields` adds network columns/indexes, `0003_detection_foundation` creates Detection storage, and `0004_correlation_foundation` creates Candidate/evidence storage. Alembic async environment loads `Base.metadata` and settings.
+- Fast persistence/API tests use SQLite. A marked integration test requires `AEGISX_TEST_POSTGRES_URL` and validates registration, authenticated ingestion, promoted fields, Candidate evidence/idempotency, and cleanup against PostgreSQL after Alembic migration.
 
 ## 7. Agent implementation
 
@@ -229,7 +233,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 
 | Classification | Divergence | Assessment |
 |---|---|---|
-| A | Correlation, incidents, AI, notifications, UI, and later detection packs are absent. | Expected roadmap state; do not infer them from the detection foundation. |
+| A | Incidents, AI, notifications, UI, and later detection packs are absent. | Expected roadmap state; do not infer them from the narrow correlation foundation. |
 | A | File/service/Wi-Fi/DNS/authentication/LAN telemetry is absent. | Dependencies for later detection packs are not built. |
 | B | `runner.py: collect_once()` combines identity, credentials, collector orchestration, queueing, registration, delivery, and error policy. | Working but already broad; should be reviewed before more agent subsystems accumulate. |
 | C | The collector interface only exposes synchronous `collect()`, not `start()/stop()`. | Reasonable for polling snapshots; event-driven collectors may require a second interface later. |
@@ -237,6 +241,8 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | C | SQLite outbox calls are synchronous inside an async runner. | Simple and acceptable at present load, but can block the event loop under slow disk/large queues. |
 | C | Network events are observations only; no persisted socket comparison exists. | Names are now truthful, but future opened/closed rules require explicit state tracking. |
 | C | Most API tests use `Base.metadata.create_all()` with SQLite. | Useful unit isolation; the core flow now also has real PostgreSQL integration coverage. |
+| C | The correlation model relationship test reads objects held in the same SQLAlchemy identity map. | Constraints and PostgreSQL integration are covered, but an independent fresh-session ORM round-trip test is deferred. |
+| C | Correlation logs all accepted batch Event IDs and persists a generic hardcoded reason for the first strategy. | Diagnostic IDs can include non-detections; future strategy-specific reasons need a result-level reason contract. |
 | D | Device token loss cannot self-recover: re-registration conflicts on unique external ID and there is no rotation/re-enrollment flow. | Operational gap that should be designed before wider deployment. |
 
 ## 9. Learning map
@@ -263,7 +269,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | Ingest | Yes | `api/telemetry.py: ingest_events()` | Authentication, idempotency, mapping, commit, response counts. |
 | Validation | Yes for five events | `schemas/event.py` | Discriminator selects the correct payload model before handler logic. |
 | Detection | Foundation | `detection/`, `services/telemetry_ingestion.py`, `models/detection.py` | Pure rules, indexed selection, result mapping, and same-transaction persistence. |
-| Correlation | No | None | Promoted columns are preparation, not a running engine. |
+| Correlation | Foundation | `correlation/`, `services/correlation.py`, `models/correlation.py` | Deterministic, bounded process/listener Candidate creation; not an Incident or attack conclusion. |
 | Incident | No | None | No model, service, or endpoint. |
 | WebSocket | No | None | No realtime server implementation. |
 | AI | No | None | No provider or analysis code. |
@@ -279,5 +285,5 @@ The most complete implemented flow is one agent collection cycle through Postgre
 7. `apps/api/src/aegisx_api/schemas/event.py` — authoritative ingest validation.
 8. `apps/api/src/aegisx_api/api/telemetry.py` — request-to-database mapping.
 9. `apps/api/src/aegisx_api/models/device.py` and `models/event.py`.
-10. The three revisions under `apps/api/alembic/versions/`, ending at `0003_detection_foundation.py`.
+10. The four revisions under `apps/api/alembic/versions/`, ending at `0004_correlation_foundation.py`.
 11. Corresponding tests under `apps/agent/tests/` and `apps/api/tests/` to see guaranteed behavior.
