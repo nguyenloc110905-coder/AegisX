@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from aegisx_api.correlation.engine import CorrelationEngine
+from aegisx_api.correlation.types import CorrelationResult
 from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
 
@@ -31,6 +32,8 @@ class CorrelationService:
         if not new_detections:
             return 0
 
+        new_by_id = {detection.id: detection for detection in new_detections}
+        new_detection_ids = frozenset(new_by_id)
         timestamp_ranges = tuple(
             and_(
                 Detection.timestamp >= timestamp - window,
@@ -46,6 +49,7 @@ class CorrelationService:
                     .where(
                         Detection.device_id == device_id,
                         Detection.rule_id.in_(_RELEVANT_RULE_IDS),
+                        Detection.id.not_in(new_detection_ids),
                         or_(*timestamp_ranges),
                     )
                     .order_by(Detection.timestamp, Detection.id)
@@ -53,11 +57,17 @@ class CorrelationService:
             ).all()
         )
         evidence_by_id = {detection.id: detection for detection in evidence}
-        evidence_by_id.update({detection.id: detection for detection in new_detections})
+        evidence_by_id.update(new_by_id)
         complete_evidence = tuple(evidence_by_id.values())
         self._restore_utc_timezone(complete_evidence)
 
-        results = self._engine.evaluate(new_detections, complete_evidence, window)
+        results_by_key: dict[str, CorrelationResult] = {}
+        for anchor in sorted(new_by_id.values(), key=lambda item: (item.timestamp, item.id)):
+            anchor_evidence = self._evidence_for_anchor(anchor, complete_evidence)
+            for result in self._engine.evaluate((anchor,), anchor_evidence, window):
+                if anchor.id in result.detection_ids:
+                    results_by_key.setdefault(result.correlation_key, result)
+        results = tuple(results_by_key.values())
         if not results:
             return 0
 
@@ -77,7 +87,9 @@ class CorrelationService:
         }
         added = 0
         for result in results:
-            if result.correlation_key in existing_keys:
+            if result.correlation_key in existing_keys or new_detection_ids.isdisjoint(
+                result.detection_ids
+            ):
                 continue
             session.add(
                 CorrelationCandidate(
@@ -96,6 +108,18 @@ class CorrelationService:
             existing_keys.add(result.correlation_key)
             added += 1
         return added
+
+    @staticmethod
+    def _evidence_for_anchor(
+        anchor: Detection, evidence: Sequence[Detection]
+    ) -> tuple[Detection, ...]:
+        if anchor.rule_id != "LISTENER_OBSERVED":
+            return tuple(evidence)
+        return tuple(
+            detection
+            for detection in evidence
+            if detection.rule_id != anchor.rule_id or detection.id == anchor.id
+        )
 
     @staticmethod
     def _restore_utc_timezone(detections: Sequence[Detection]) -> None:

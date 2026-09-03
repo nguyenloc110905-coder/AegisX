@@ -349,6 +349,68 @@ async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
 
 
 @pytest.mark.asyncio
+async def test_new_detection_cannot_persist_a_historical_only_correlation(
+    app_and_client,
+) -> None:
+    app, client = app_and_client
+    token = await register(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    process_a_timestamp = datetime(2026, 9, 3, 0, 0, tzinfo=UTC)
+    process_b_timestamp = process_a_timestamp + timedelta(minutes=4)
+    listener_one_timestamp = process_a_timestamp + timedelta(minutes=5)
+    listener_two_timestamp = process_a_timestamp + timedelta(minutes=6)
+    process_a_event_id = uuid4()
+    process_b_event_id = uuid4()
+    listener_one_event_id = uuid4()
+    listener_two_event_id = uuid4()
+    events = (
+        process_started_event(
+            str(process_a_event_id),
+            timestamp=process_a_timestamp,
+            started_at=process_a_timestamp,
+        ),
+        process_started_event(
+            str(process_b_event_id),
+            timestamp=process_b_timestamp,
+            started_at=process_b_timestamp,
+        ),
+        listener_observed_event(str(listener_one_event_id), timestamp=listener_one_timestamp),
+        listener_observed_event(str(listener_two_event_id), timestamp=listener_two_timestamp),
+    )
+
+    for index, event in enumerate(events):
+        response = await client.post(
+            "/api/v1/telemetry/events",
+            headers=headers,
+            json={"events": [event]},
+        )
+        assert response.status_code == 202
+        assert response.json() == {"accepted": 1, "duplicates": 0}
+        if index == 2:
+            async with app.state.session_factory() as session:
+                candidate_count = await session.scalar(
+                    select(func.count()).select_from(CorrelationCandidate)
+                )
+            assert candidate_count == 0
+
+    async with app.state.session_factory() as session:
+        event_count = await session.scalar(select(func.count()).select_from(Event))
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
+        candidate = await session.scalar(
+            select(CorrelationCandidate).options(selectinload(CorrelationCandidate.events))
+        )
+    assert event_count == 4
+    assert detection_count == 4
+    assert candidate is not None
+    assert candidate.start_timestamp == process_b_timestamp.replace(tzinfo=None)
+    assert candidate.end_timestamp == listener_two_timestamp.replace(tzinfo=None)
+    assert {event.id for event in candidate.events} == {
+        process_b_event_id,
+        listener_two_event_id,
+    }
+
+
+@pytest.mark.asyncio
 async def test_correlation_failure_preserves_authoritative_event_and_detection_rows(
     app_and_client,
 ) -> None:
