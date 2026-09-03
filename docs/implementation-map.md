@@ -36,9 +36,9 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 
 ### Verified checks
 
-- API verification is recorded in the Milestone 5A completion report; it includes the PostgreSQL Candidate integration flow, Ruff format/lint, and strict mypy.
-- Agent: 25 pytest tests pass; Ruff format/lint pass; mypy passes on 16 source files.
-- Alembic exposes one head: `0004_correlation_foundation`.
+- API: 51 pytest cases passed with PostgreSQL integration enabled, including the real Candidate flow; Ruff format/lint passed; strict mypy passed on 43 source files.
+- Agent: 25 pytest cases passed; Ruff format/lint passed; strict mypy passed on 16 source files.
+- PostgreSQL Alembic `upgrade head`, `current`, and `heads` reached the single `0004_correlation_foundation (head)`.
 
 ## 2. Important project tree
 
@@ -83,7 +83,7 @@ AegisX/
 │   │   │   └── schemas/
 │   │   │       ├── device.py             # Registration request/response models.
 │   │   │       └── event.py              # Discriminated event payload/envelope models.
-│   │   └── tests/                         # 15 fast tests plus one PostgreSQL integration test.
+│   │   └── tests/                         # 50 non-integration cases across API test modules plus one PostgreSQL integration case.
 │   ├── agent/
 │   │   ├── pyproject.toml                # Agent CLI package and quality configuration.
 │   │   ├── src/aegisx_agent/
@@ -181,7 +181,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 9. `runner.py` reads oldest outbox batches. `AegisXClient.send_events()` sends JSON plus `Authorization: Bearer <token>` to `POST /api/v1/telemetry/events`.
 10. `apps/api/src/aegisx_api/api/dependencies.py` — `get_database_session()` yields an `AsyncSession`; `get_current_device()` hashes the bearer token, queries an active Device, and performs `compare_digest` before accepting it.
 11. `apps/api/src/aegisx_api/schemas/event.py` — `EventBatchRequest` and the discriminated `TelemetryEvent` union validate the complete body before handler execution.
-12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, flushes Event/Detection evidence, runs correlation in a nested savepoint, updates device `last_seen_at`, and commits the authoritative outer transaction. A correlation-only failure logs every accepted triggering Event ID (including non-detections) and leaves Event/Detection evidence committed.
+12. `apps/api/src/aegisx_api/services/telemetry_ingestion.py` — the service skips duplicate UUIDs, maps new Events, invokes the Detection Engine, sets device `last_seen_at`, flushes Event/Detection evidence, runs correlation in a nested savepoint, and commits the authoritative outer transaction. A correlation-only failure logs every accepted triggering Event ID (including non-detections) and leaves Event/Detection evidence committed.
 13. The API returns HTTP 202 with counts. `_deliver_batch()` in the agent acknowledges accounted event IDs, leaving zero pending rows on full success.
 14. Network/timeout/429/5xx errors leave events pending. 400/422 responses recursively split batches and move isolated single bad events to quarantine. 401/403 propagate without deleting queued evidence.
 

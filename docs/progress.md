@@ -208,4 +208,8 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ### Verification
 
-Final Milestone 5A API/agent/test/type/migration/PostgreSQL results are recorded in the completion report for this milestone.
+- API suite with PostgreSQL integration enabled — 51 passed, including the real PostgreSQL Candidate flow.
+- Agent suite — 25 passed.
+- API and agent Ruff format and lint — passed.
+- API mypy — passed on 43 source files; agent mypy — passed on 16 source files.
+- PostgreSQL Alembic `upgrade head`, `current`, and `heads` — `0004_correlation_foundation (head)`.
