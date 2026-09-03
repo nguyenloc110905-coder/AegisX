@@ -1,6 +1,6 @@
 # AegisX Current Implementation Map
 
-This document maps the source code through the in-progress Milestone 5B hardening work. It does not treat plans, backlogs, or README claims as implementation evidence.
+This document maps the source code through the verified Milestone 5B hardening work. It does not treat plans, backlogs, or README claims as implementation evidence.
 
 ## 1. Current status
 
@@ -83,7 +83,7 @@ AegisX/
 │   │   │   └── schemas/
 │   │   │       ├── device.py             # Registration request/response models.
 │   │   │       └── event.py              # Discriminated event payload/envelope models.
-│   │   └── tests/                         # 50 non-integration cases across API test modules plus one PostgreSQL integration case.
+│   │   └── tests/                         # 58 non-integration cases across API test modules plus one PostgreSQL integration case.
 │   ├── agent/
 │   │   ├── pyproject.toml                # Agent CLI package and quality configuration.
 │   │   ├── src/aegisx_agent/
@@ -102,7 +102,7 @@ AegisX/
 │   │   │       ├── system.py             # Host/kernel/uptime/CPU/RAM snapshot.
 │   │   │       ├── process.py            # Bounded process/resource snapshots.
 │   │   │       └── network.py            # Bounded listener/connection snapshots.
-│   │   └── tests/                         # 25 collector/client/outbox/runner tests.
+│   │   └── tests/                         # 42 collector/client/outbox/runner tests.
 │   └── web/README.md                      # Boundary note only; no web source exists.
 ├── packages/shared/README.md              # Boundary note only; no shared package exists.
 └── docs/                                  # Design, progress, backlog, and this source map.

@@ -216,7 +216,7 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 
 ## Milestone 5B — Telemetry Fidelity & Operational Hardening
 
-Status: implementation complete through Task 5; final verification in progress.
+Status: complete and verified.
 
 ### Task 1 — Development environment
 
@@ -256,6 +256,17 @@ Status: implementation complete through Task 5; final verification in progress.
 - Failure logs set `evidence_committed=true` only after Event/Detection commit succeeds. An outer-commit failure emits no false survival claim.
 - Removed accepted Event UUID lists and avoided tokens, command lines, raw telemetry, metadata, exception messages, and payload-bearing stack output.
 - Focused verification passed four outcome/failure-boundary cases; API Ruff and strict mypy passed.
+
+### Final verification
+
+- API suite with real PostgreSQL integration enabled: `59 passed`.
+- Agent suite: `42 passed`.
+- API Ruff format/check: 59 files formatted and lint-clean; strict mypy passed on 43 source files.
+- Agent Ruff format/check: 24 files formatted and lint-clean; strict mypy passed on 16 source files.
+- Alembic on an isolated PostgreSQL database: upgrade `base -> 0004_correlation_foundation`, current/heads at `0004`, downgrade `0004 -> base`, and second upgrade/current to `0004` all passed. Milestone 5B adds no relational schema and requires no new migration.
+- Development PostgreSQL remained healthy and accepted `SELECT 1`; the isolated migration database was dropped after verification.
+- `docker compose --env-file .env.example config --quiet`, foundation checks, `git diff --check`, and final scope/status checks passed. Docker daemon runtime remains unavailable to the current non-`docker` user, so runtime health was verified through rootless Podman.
+- Incident, AI, UI, notifications, advanced attack detection packs, DNS, Wi-Fi, and packaging/onboarding UX were not started.
 
 ### Scope boundary
 
