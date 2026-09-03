@@ -204,6 +204,21 @@ def test_process_collector_output_cap_does_not_make_identity_snapshot_incomplete
     ] == [42]
 
 
+def test_process_collector_bounds_exit_output_without_truncating_state(tmp_path: Path) -> None:
+    state_path = tmp_path / "process-state.json"
+    processes = [FakeProcess(process_info(pid)) for pid in (41, 42, 43)]
+    collector = ProcessCollector(
+        process_iter=iterator(processes), max_processes=1, state_path=state_path
+    )
+    collector.collect()
+    processes.clear()
+
+    exited = collector.collect()
+
+    assert len(exited) == 1
+    assert exited[0].event_type == "process.exited"
+
+
 def test_process_collector_bounds_processes_and_command_line(tmp_path: Path) -> None:
     long_command = ["x" * 200 for _ in range(100)]
     processes = [FakeProcess(process_info(pid, long_command)) for pid in range(1, 5)]

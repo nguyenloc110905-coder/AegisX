@@ -92,7 +92,8 @@ class ProcessCollector:
             return observations
 
         if previous is not None:
-            for process_key in sorted(previous.keys() - current.keys()):
+            exited_keys = sorted(previous.keys() - current.keys())[: self._max_processes]
+            for process_key in exited_keys:
                 identity = previous[process_key]
                 observations.append(
                     Observation(

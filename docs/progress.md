@@ -260,13 +260,14 @@ Status: complete and verified.
 ### Final verification
 
 - API suite with real PostgreSQL integration enabled: `59 passed`.
-- Agent suite: `42 passed`.
+- Agent suite: `43 passed`.
 - API Ruff format/check: 59 files formatted and lint-clean; strict mypy passed on 43 source files.
 - Agent Ruff format/check: 24 files formatted and lint-clean; strict mypy passed on 16 source files.
 - Alembic on an isolated PostgreSQL database: upgrade `base -> 0004_correlation_foundation`, current/heads at `0004`, downgrade `0004 -> base`, and second upgrade/current to `0004` all passed. Milestone 5B adds no relational schema and requires no new migration.
 - Development PostgreSQL remained healthy and accepted `SELECT 1`; the isolated migration database was dropped after verification.
 - `docker compose --env-file .env.example config --quiet`, foundation checks, `git diff --check`, and final scope/status checks passed. Docker daemon runtime remains unavailable to the current non-`docker` user, so runtime health was verified through rootless Podman.
 - Incident, AI, UI, notifications, advanced attack detection packs, DNS, Wi-Fi, and packaging/onboarding UX were not started.
+- Final self-review added a regression guard that separately caps `process.exited` output without truncating the identity snapshot; excess exits are intentionally omitted rather than replayed later with stale evidence.
 
 ### Scope boundary
 

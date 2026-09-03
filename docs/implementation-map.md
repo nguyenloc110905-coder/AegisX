@@ -102,7 +102,7 @@ AegisX/
 │   │   │       ├── system.py             # Host/kernel/uptime/CPU/RAM snapshot.
 │   │   │       ├── process.py            # Bounded process/resource snapshots.
 │   │   │       └── network.py            # Bounded listener/connection snapshots.
-│   │   └── tests/                         # 42 collector/client/outbox/runner tests.
+│   │   └── tests/                         # 43 collector/client/outbox/runner tests.
 │   └── web/README.md                      # Boundary note only; no web source exists.
 ├── packages/shared/README.md              # Boundary note only; no shared package exists.
 └── docs/                                  # Design, progress, backlog, and this source map.
