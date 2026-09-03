@@ -213,3 +213,18 @@ Status: implemented as one deterministic, evidence-first Candidate strategy; inc
 - API and agent Ruff format and lint — passed.
 - API mypy — passed on 43 source files; agent mypy — passed on 16 source files.
 - PostgreSQL Alembic `upgrade head`, `current`, and `heads` — `0004_correlation_foundation (head)`.
+
+## Milestone 5B — Telemetry Fidelity & Operational Hardening
+
+Status: in progress; Task 1 complete.
+
+### Task 1 — Development environment
+
+- Repaired the malformed PostgreSQL `volumes` entry in `compose.yaml` without changing the service's ports, credentials, health check, resource limit, security options, or named-volume lifecycle.
+- `docker compose --env-file .env.example config --quiet` passed and the rendered configuration contains both the named PostgreSQL data volume and read-only SELinux-labelled initialization bind mount.
+- Docker runtime access remains unavailable to user `nguyenloc`: `/var/run/docker.sock` is owned by `root:docker` and the user is not a member of `docker`.
+- Rootless `podman compose --env-file .env.example up -d --wait postgres` reported the service healthy; `pg_isready` accepted connections and `SELECT 1 AS compose_postgres_ok` returned one row.
+
+### Scope boundary
+
+Incident, AI, UI, notifications, advanced attack detection packs, DNS, Wi-Fi, and packaging/onboarding UX remain unstarted.
