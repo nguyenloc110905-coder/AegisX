@@ -110,3 +110,46 @@ async def test_collect_once_quarantines_permanently_invalid_event(tmp_path: Path
     assert result.delivery_status == "delivered"
     assert result.queued == 0
     assert result.quarantined == 1
+
+
+@pytest.mark.asyncio
+async def test_collect_once_propagates_observation_settings_to_default_collectors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = AgentSettings(
+        _env_file=None,
+        state_directory=tmp_path,
+        api_url="http://test",
+        emit_process_resource_usage=True,
+        emit_network_snapshot_observations=True,
+    )
+    constructor_arguments: dict[str, dict[str, object]] = {}
+
+    def process_collector(**kwargs: object) -> FakeCollector:
+        constructor_arguments["process"] = kwargs
+        return FakeCollector()
+
+    def network_collector(**kwargs: object) -> FakeCollector:
+        constructor_arguments["network"] = kwargs
+        return FakeCollector()
+
+    monkeypatch.setattr("aegisx_agent.runner.SystemCollector", FakeCollector)
+    monkeypatch.setattr("aegisx_agent.runner.ProcessCollector", process_collector)
+    monkeypatch.setattr("aegisx_agent.runner.NetworkCollector", network_collector)
+
+    result = await collect_once(settings, client=FakeClient())
+
+    assert result.accepted == 3
+    assert constructor_arguments == {
+        "process": {
+            "max_processes": 40,
+            "state_path": tmp_path / "process-state.json",
+            "emit_resource_usage": True,
+        },
+        "network": {
+            "max_connections": 200,
+            "state_path": tmp_path / "network-state.json",
+            "emit_observations": True,
+        },
+    }

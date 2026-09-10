@@ -69,15 +69,24 @@ def test_process_collector_baselines_then_emits_only_new_processes(tmp_path: Pat
     processes.append(FakeProcess(process_info(43)))
     changed = restarted_collector.collect()
 
-    assert [event.event_type for event in baseline] == ["process.resource_usage"]
-    assert [event.event_type for event in unchanged] == ["process.resource_usage"]
-    assert [event.event_type for event in changed] == [
-        "process.resource_usage",
-        "process.started",
-        "process.resource_usage",
-    ]
-    assert changed[1].data["pid"] == 43
-    assert changed[1].data["command_line"] == ["python3", "demo.py"]
+    assert baseline == []
+    assert unchanged == []
+    assert [event.event_type for event in changed] == ["process.started"]
+    assert changed[0].data["pid"] == 43
+    assert changed[0].data["command_line"] == ["python3", "demo.py"]
+
+
+def test_process_resource_usage_is_opt_in(tmp_path: Path) -> None:
+    collector = ProcessCollector(
+        process_iter=iterator([FakeProcess(process_info(42))]),
+        state_path=tmp_path / "process-state.json",
+        emit_resource_usage=True,
+    )
+
+    events = collector.collect()
+
+    assert [event.event_type for event in events] == ["process.resource_usage"]
+    assert events[0].data == {"pid": 42, "cpu_percent": 12.5, "memory_bytes": 4096}
 
 
 def test_process_collector_skips_inaccessible_and_vanished_processes(tmp_path: Path) -> None:
@@ -91,8 +100,7 @@ def test_process_collector_skips_inaccessible_and_vanished_processes(tmp_path: P
         process_iter=iterator(processes), state_path=tmp_path / "process-state.json"
     ).collect()
 
-    assert len(events) == 1
-    assert all(event.data["pid"] == 3 for event in events)
+    assert events == []
 
 
 def test_process_collector_emits_exit_only_after_complete_absence(tmp_path: Path) -> None:
@@ -128,7 +136,7 @@ def test_process_collector_does_not_infer_exit_from_failed_lookup(tmp_path: Path
     recovered = collector.collect()
 
     assert failed == []
-    assert [event.event_type for event in recovered] == ["process.resource_usage"]
+    assert recovered == []
 
 
 def test_process_collector_does_not_update_baseline_without_create_time(tmp_path: Path) -> None:
@@ -143,7 +151,7 @@ def test_process_collector_does_not_update_baseline_without_create_time(tmp_path
     assert collector.collect() == []
 
     processes[:] = [FakeProcess(process_info(42))]
-    assert [event.event_type for event in collector.collect()] == ["process.resource_usage"]
+    assert collector.collect() == []
 
 
 def test_process_collector_pid_reuse_emits_old_exit_and_new_start(tmp_path: Path) -> None:
@@ -157,16 +165,13 @@ def test_process_collector_pid_reuse_emits_old_exit_and_new_start(tmp_path: Path
     processes[:] = [replacement]
     events = collector.collect()
 
-    lifecycle = [event for event in events if event.event_type != "process.resource_usage"]
-    assert {event.event_type for event in lifecycle} == {"process.started", "process.exited"}
-    assert next(event for event in lifecycle if event.event_type == "process.exited").data == {
+    assert {event.event_type for event in events} == {"process.started", "process.exited"}
+    assert next(event for event in events if event.event_type == "process.exited").data == {
         "pid": 42,
         "started_at": "2023-11-14T22:13:20+00:00",
     }
     assert (
-        next(event for event in lifecycle if event.event_type == "process.started").data[
-            "started_at"
-        ]
+        next(event for event in events if event.event_type == "process.started").data["started_at"]
         == "2023-11-14T22:15:00+00:00"
     )
 
@@ -196,12 +201,9 @@ def test_process_collector_output_cap_does_not_make_identity_snapshot_incomplete
     processes[:] = [FakeProcess(process_info(42))]
     exited = collector.collect()
 
-    assert [event.event_type for event in baseline] == ["process.resource_usage"]
-    assert [event.event_type for event in unchanged] == ["process.resource_usage"]
+    assert baseline == []
+    assert unchanged == []
     assert [event.data["pid"] for event in exited if event.event_type == "process.exited"] == [43]
-    assert [
-        event.data["pid"] for event in exited if event.event_type == "process.resource_usage"
-    ] == [42]
 
 
 def test_process_collector_bounds_exit_output_without_truncating_state(tmp_path: Path) -> None:

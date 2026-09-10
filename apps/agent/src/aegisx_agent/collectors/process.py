@@ -48,12 +48,14 @@ class ProcessCollector:
         max_command_args: int = 64,
         max_command_chars: int = 4096,
         state_path: Path | None = None,
+        emit_resource_usage: bool = False,
     ) -> None:
         self._process_iter = process_iter
         self._max_processes = max_processes
         self._max_command_args = max_command_args
         self._max_command_chars = max_command_chars
         self._state_path = state_path
+        self._emit_resource_usage = emit_resource_usage
         self._memory_state: dict[str, ProcessIdentity] | None = None
 
     def collect(self) -> list[Observation]:
@@ -86,7 +88,8 @@ class ProcessCollector:
         for identity, info in bounded_records:
             if snapshot_complete and previous is not None and identity.key not in previous:
                 observations.append(self._started_observation(identity, info))
-            observations.append(self._resource_observation(identity.pid, info))
+            if self._emit_resource_usage:
+                observations.append(self._resource_observation(identity.pid, info))
 
         if not snapshot_complete:
             return observations

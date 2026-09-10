@@ -40,7 +40,7 @@
 - `AgentSettings.emit_process_resource_usage: bool = False` and `AgentSettings.emit_network_snapshot_observations: bool = False` are passed by `collect_once()`.
 - Baseline comparison, state persistence, transition output, outbox, and delivery contracts remain unchanged.
 
-- [ ] **Step 1: Add failing settings tests**
+- [x] **Step 1: Add failing settings tests**
 
 ```python
 def test_high_volume_observations_are_disabled_by_default() -> None:
@@ -59,13 +59,13 @@ def test_high_volume_observations_can_be_enabled_from_environment(
     assert settings.emit_network_snapshot_observations is True
 ```
 
-- [ ] **Step 2: Run the settings tests and confirm RED**
+- [x] **Step 2: Run the settings tests and confirm RED**
 
 Run: `uv run --project apps/agent pytest apps/agent/tests/test_config.py -q`
 
 Expected: fail because both settings fields are absent.
 
-- [ ] **Step 3: Add the two boolean settings**
+- [x] **Step 3: Add the two boolean settings**
 
 ```python
 emit_process_resource_usage: bool = Field(
@@ -80,7 +80,7 @@ emit_network_snapshot_observations: bool = Field(
 
 Add both variables with value `false` to `.env.example`.
 
-- [ ] **Step 4: Add failing process collector tests**
+- [x] **Step 4: Add failing process collector tests**
 
 Change lifecycle tests to expect no resource Event by default. Add one explicit opt-in test:
 
@@ -94,17 +94,17 @@ def test_process_resource_usage_is_opt_in(tmp_path: Path) -> None:
     assert [event.event_type for event in collector.collect()] == ["process.resource_usage"]
 ```
 
-- [ ] **Step 5: Run the process collector tests and confirm RED**
+- [x] **Step 5: Run the process collector tests and confirm RED**
 
 Run: `uv run --project apps/agent pytest apps/agent/tests/test_process_collector.py -q`
 
 Expected: default-output assertions fail until emission is gated.
 
-- [ ] **Step 6: Gate process resource Event construction**
+- [x] **Step 6: Gate process resource Event construction**
 
 Store `emit_resource_usage` in `ProcessCollector.__init__`. In `collect()`, append `_resource_observation()` only when it is true. Do not change identity enumeration, `snapshot_complete`, transition comparison, or `_save_state()`.
 
-- [ ] **Step 7: Add failing network collector tests**
+- [x] **Step 7: Add failing network collector tests**
 
 Default baseline/repeated snapshots must be empty, while transitions remain:
 
@@ -117,13 +117,13 @@ assert collector.collect() == []
 
 Add an opt-in collector test expecting the existing `listener_observed` and `connection_observed` records when `emit_observations=True`.
 
-- [ ] **Step 8: Run the network collector tests and confirm RED**
+- [x] **Step 8: Run the network collector tests and confirm RED**
 
 Run: `uv run --project apps/agent pytest apps/agent/tests/test_network_collector.py -q`
 
 Expected: repeated observed Events are still emitted.
 
-- [ ] **Step 9: Gate network observation construction**
+- [x] **Step 9: Gate network observation construction**
 
 Store `emit_observations` in `NetworkCollector.__init__` and initialize:
 
@@ -137,11 +137,11 @@ observations = (
 
 Do not gate transition output or baseline replacement.
 
-- [ ] **Step 10: Prove runner propagation**
+- [x] **Step 10: Prove runner propagation**
 
 Update the existing default-collector runner test to patch the collector constructors and assert that `collect_once()` passes the two resolved settings to the matching constructor. Then pass the settings in `runner.py`.
 
-- [ ] **Step 11: Verify and commit Task 1**
+- [x] **Step 11: Verify and commit Task 1**
 
 Run:
 

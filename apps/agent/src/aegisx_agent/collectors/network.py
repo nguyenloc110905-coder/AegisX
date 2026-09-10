@@ -32,10 +32,12 @@ class NetworkCollector:
         net_connections: Callable[..., Iterable[Any]] = psutil.net_connections,
         max_connections: int = 200,
         state_path: Path | None = None,
+        emit_observations: bool = False,
     ) -> None:
         self._net_connections = net_connections
         self._max_connections = max_connections
         self._state_path = state_path
+        self._emit_observations = emit_observations
         self._memory_state: dict[str, SocketRecord] | None = None
 
     def collect(self) -> list[Observation]:
@@ -52,7 +54,11 @@ class NetworkCollector:
         except (psutil.AccessDenied, psutil.Error):
             return []
 
-        observations = [self._observed(record) for record in records[: self._max_connections]]
+        observations = (
+            [self._observed(record) for record in records[: self._max_connections]]
+            if self._emit_observations
+            else []
+        )
         if not snapshot_complete:
             return observations
 

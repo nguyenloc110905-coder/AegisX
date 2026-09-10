@@ -21,7 +21,10 @@ def test_network_collector_emits_listener_and_connection() -> None:
         ),
     ]
 
-    events = NetworkCollector(net_connections=lambda kind: entries).collect()
+    events = NetworkCollector(
+        net_connections=lambda kind: entries,
+        emit_observations=True,
+    ).collect()
 
     assert [event.event_type for event in events] == [
         "network.listener_observed",
@@ -40,7 +43,11 @@ def test_network_collector_handles_udp_missing_pid_and_bounds() -> None:
         for port in range(5000, 5003)
     ]
 
-    events = NetworkCollector(net_connections=lambda kind: entries, max_connections=2).collect()
+    events = NetworkCollector(
+        net_connections=lambda kind: entries,
+        max_connections=2,
+        emit_observations=True,
+    ).collect()
 
     assert len(events) == 2
     assert all(event.event_type == "network.listener_observed" for event in events)
@@ -55,7 +62,7 @@ def test_network_collector_degrades_when_access_is_denied() -> None:
     assert NetworkCollector(net_connections=denied).collect() == []
 
 
-def test_network_collector_repeated_snapshot_is_observed_but_not_reopened(tmp_path: Path) -> None:
+def test_network_collector_repeated_snapshot_is_quiet_by_default(tmp_path: Path) -> None:
     entries = [connection(status=psutil.CONN_LISTEN, laddr=("127.0.0.1", 8080))]
     collector = NetworkCollector(
         net_connections=lambda kind: entries,
@@ -65,8 +72,8 @@ def test_network_collector_repeated_snapshot_is_observed_but_not_reopened(tmp_pa
     baseline = collector.collect()
     repeated = collector.collect()
 
-    assert [event.event_type for event in baseline] == ["network.listener_observed"]
-    assert [event.event_type for event in repeated] == ["network.listener_observed"]
+    assert baseline == []
+    assert repeated == []
 
 
 def test_network_collector_proves_listener_opened_and_closed(tmp_path: Path) -> None:
@@ -82,18 +89,11 @@ def test_network_collector_proves_listener_opened_and_closed(tmp_path: Path) -> 
     entries.pop()
     closed = collector.collect()
 
-    assert [event.event_type for event in opened] == [
-        "network.listener_observed",
-        "network.listener_observed",
-        "network.listener_opened",
-    ]
-    assert opened[-1].data["local_port"] == 9000
-    assert opened[-1].data["pid"] == 99
-    assert [event.event_type for event in closed] == [
-        "network.listener_observed",
-        "network.listener_closed",
-    ]
-    assert closed[-1].data["local_port"] == 9000
+    assert [event.event_type for event in opened] == ["network.listener_opened"]
+    assert opened[0].data["local_port"] == 9000
+    assert opened[0].data["pid"] == 99
+    assert [event.event_type for event in closed] == ["network.listener_closed"]
+    assert closed[0].data["local_port"] == 9000
 
 
 def test_network_collector_proves_connection_opened_and_closed(tmp_path: Path) -> None:
@@ -115,10 +115,7 @@ def test_network_collector_proves_connection_opened_and_closed(tmp_path: Path) -
     entries.clear()
     closed = collector.collect()
 
-    assert [event.event_type for event in opened] == [
-        "network.connection_observed",
-        "network.connection_opened",
-    ]
+    assert [event.event_type for event in opened] == ["network.connection_opened"]
     assert [event.event_type for event in closed] == ["network.connection_closed"]
     assert closed[0].data["remote_ip"] == "198.51.100.20"
 
@@ -132,7 +129,7 @@ def test_network_collector_restart_reads_persisted_baseline(tmp_path: Path) -> N
         net_connections=lambda kind: [entry], state_path=state_path
     ).collect()
 
-    assert [event.event_type for event in repeated] == ["network.listener_observed"]
+    assert repeated == []
 
 
 def test_network_collector_does_not_attribute_ambiguous_duplicate_open(tmp_path: Path) -> None:
@@ -153,11 +150,8 @@ def test_network_collector_does_not_attribute_ambiguous_duplicate_open(tmp_path:
     entries[:] = [entries[0]]
     unique_later = collector.collect()
 
-    assert [event.event_type for event in ambiguous] == [
-        "network.listener_observed",
-        "network.listener_observed",
-    ]
-    assert [event.event_type for event in unique_later] == ["network.listener_observed"]
+    assert ambiguous == []
+    assert unique_later == []
 
 
 def test_network_collector_incomplete_snapshot_cannot_close_prior_socket(tmp_path: Path) -> None:
@@ -174,7 +168,7 @@ def test_network_collector_incomplete_snapshot_cannot_close_prior_socket(tmp_pat
     recovered = collector.collect()
 
     assert incomplete == []
-    assert [event.event_type for event in recovered] == ["network.listener_observed"]
+    assert recovered == []
 
 
 def test_network_collector_failed_snapshot_retains_prior_baseline(tmp_path: Path) -> None:
@@ -197,7 +191,7 @@ def test_network_collector_failed_snapshot_retains_prior_baseline(tmp_path: Path
 
     collector.collect()
     assert collector.collect() == []
-    assert [event.event_type for event in collector.collect()] == ["network.listener_observed"]
+    assert collector.collect() == []
 
 
 def test_network_collector_bounds_transition_output_without_truncating_state(

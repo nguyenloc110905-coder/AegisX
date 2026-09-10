@@ -27,3 +27,11 @@ class AgentSettings(BaseSettings):
     request_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     collection_interval_seconds: float = Field(default=30.0, ge=5, le=3600)
     max_backoff_seconds: float = Field(default=300.0, ge=5, le=3600)
+    emit_process_resource_usage: bool = Field(
+        default=False,
+        validation_alias="AEGISX_EMIT_PROCESS_RESOURCE_USAGE",
+    )
+    emit_network_snapshot_observations: bool = Field(
+        default=False,
+        validation_alias="AEGISX_EMIT_NETWORK_SNAPSHOT_OBSERVATIONS",
+    )

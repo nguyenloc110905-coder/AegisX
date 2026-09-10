@@ -102,10 +102,12 @@ async def collect_once(
             ProcessCollector(
                 max_processes=settings.max_processes,
                 state_path=settings.state_directory / "process-state.json",
+                emit_resource_usage=settings.emit_process_resource_usage,
             ),
             NetworkCollector(
                 max_connections=settings.max_network_connections,
                 state_path=settings.state_directory / "network-state.json",
+                emit_observations=settings.emit_network_snapshot_observations,
             ),
         ]
         events = [
