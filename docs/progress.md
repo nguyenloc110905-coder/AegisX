@@ -295,9 +295,9 @@ Status: implemented and unit-verified; PostgreSQL integration tests require `AEG
 - No production promotion policy added for `PROCESS_LISTENER_ACTIVITY`.
 - The candidate remains low confidence, aggregate score 5, and will NOT automatically create an Incident.
 
-### Scope boundary
+### Scope boundary at 6A acceptance
 
-AI Investigator, UI, notifications, response actions, background reconciliation, packaging, and Milestone 6B+ work remain unstarted.
+AI Investigator, UI, notifications, response actions, background reconciliation, packaging, and Milestone 6B+ work had not started when 6A was accepted. The developer bundle documented below was added afterward; AI was subsequently removed from the roadmap.
 
 ### Verification
 
@@ -306,3 +306,38 @@ AI Investigator, UI, notifications, response actions, background reconciliation,
 - API Ruff format/check: clean on 46 source files.
 - API mypy strict: clean on 46 source files.
 - Alembic: migration `0005_incident_foundation` is the single head.
+
+## One-Command Developer Bundle
+
+Status: implemented and smoke-tested.
+
+### Completed work
+
+- Preserved the rejected external AI/Decision/detection experiment on local branch `rescue/ai-work-20260910`; `main` remains based on the accepted 6A implementation.
+- Added the dependency-free `aegisx` launcher package plus one-time `scripts/install-aegisx` editable installation.
+- Added repository/environment discovery, safe Compose argv handling, Docker-to-Podman fallback, automatic user `podman.socket` startup, PostgreSQL readiness, dependency sync, Alembic migration, API readiness gating, host-agent startup, child supervision, and ownership-aware cleanup.
+- Added private atomic single-instance state with live PID rejection and instance-ID cleanup protection.
+- Removed AI Investigator from the active roadmap and current-product documentation. No AI provider dependency or implementation exists on `main`.
+- Corrected the launcher's readiness target from the initially tested wrong `/api/v1/health/ready` path to the actual `/health/ready` endpoint using a red/green regression test.
+- Removed the stale, empty `action_decisions` table left by the external experiment and restored the development database marker from `0006_decision_foundation` to accepted head `0005_incident_foundation`. A recoverable PostgreSQL custom-format backup is stored at `/home/nguyenloc/.local/state/aegisx/backups/aegisx-pre-0006-cleanup-20260910.dump`.
+
+### Runtime smoke evidence
+
+- Installed executable resolved as `/home/nguyenloc/.local/bin/aegisx`.
+- `aegisx --help` and `aegisx doctor` succeeded from `/tmp`.
+- Final real launch rejected inaccessible Docker, selected rootless Podman, reached PostgreSQL healthy, migrated to `0005_incident_foundation`, returned HTTP 200 from `/health/ready`, and delivered an agent cycle with 264 accepted events, zero queued, and zero quarantined.
+- `Ctrl+C` stopped Uvicorn and the agent, removed launcher ownership state, and preserved the PostgreSQL service that was already running.
+
+### Final verification
+
+- API suite against an isolated real PostgreSQL database: `102 passed`.
+- Agent suite: `43 passed`; launcher suite: `39 passed`.
+- API, agent, and launcher Ruff format/check passed; strict mypy passed on 46, 16, and 7 source files respectively.
+- Alembic `current` and `heads` both reported `0005_incident_foundation (head)` after the suite's PostgreSQL downgrade/upgrade round trip.
+- Docker Compose and Podman Compose configuration validation, repository foundation checks, and `git diff --check` passed.
+- Fixed a 6A verification defect: the advisory-lock timeout integration test now uses a valid shared device and requires the PostgreSQL `statement_timeout` database error instead of accepting any unrelated exception.
+- The isolated verification database was dropped after testing. Final launcher shutdown left no API/agent child process or launcher state file.
+
+### Scope boundary
+
+This bundle does not change telemetry, Detection, CorrelationCandidate, Incident, or scoring semantics. Decision/Policy, response execution, UI, notifications, new detection packs, and production eBPF CO-RE deployment remain separate work.

@@ -1,24 +1,21 @@
 # AegisX
 
-AegisX is an evidence-first endpoint, network, and Wi-Fi security monitoring platform that detects behavioral anomalies, correlates related telemetry into incidents, and uses AI to assist investigation. It is built for authorized Linux labs and is not an antivirus, full SIEM, commercial EDR replacement, or guaranteed malware detector.
+AegisX is an evidence-first Linux endpoint and network security monitoring project. It collects truthful telemetry, applies deterministic detection and correlation, and preserves evidence in explainable Incidents. It is built for authorized Linux labs and is not an antivirus, full SIEM, commercial EDR replacement, or guaranteed malware detector.
 
 ## Evidence-first flow
 
 ```text
-Telemetry -> Detection rules -> Risk score -> Correlation -> Incident
-                                                               |
-                                                               +-> AI investigation
-                                                               +-> User notification
+Telemetry -> Detection -> CorrelationCandidate -> Incident
 ```
 
-A single weak signal is not treated as proof of malware. Incidents preserve facts, evidence, hypotheses, uncertainty, and conclusions separately. AI receives curated incident evidence and cannot kill processes, delete files, modify firewall rules, or execute shell commands.
+A single weak signal is not treated as proof of malware. Events, Detections, CorrelationCandidates, Incident workflow, disposition, and future response decisions remain separate concepts. AegisX does not execute response actions.
 
 ## Repository layout
 
 ```text
 apps/api/       FastAPI backend (starts in Milestone 1)
 apps/agent/     Linux endpoint agent (starts in Milestone 2)
-apps/web/       Next.js interface (starts in Milestone 6)
+apps/web/       Reserved; no web application is implemented
 packages/shared/ Versioned shared contracts
 infrastructure/ Local infrastructure configuration
 docs/           Architecture, security, and development documentation
@@ -27,41 +24,39 @@ scripts/        Repository checks and later safe validation helpers
 
 ## Current implementation
 
-Milestones 0-5A are implemented: repository foundation, PostgreSQL 17, typed FastAPI ingestion, a Linux agent with real process/system/network collection, deterministic Detection rules, and a narrow evidence-first CorrelationCandidate foundation. The implemented correlation associates a recent process identity with a listener snapshot; it does not create an Incident or conclude malicious activity. UI, AI integration, validation scenarios, Incident workflow, and later detection packs do not exist yet.
+Milestones through 6A are implemented: PostgreSQL-backed typed ingestion, a Linux process/system/network agent, deterministic Detection rules, a narrow CorrelationCandidate foundation, and Incident persistence/promotion infrastructure. No production Incident promotion policy exists for the current low-confidence listener candidate.
 
 See [progress](docs/progress.md) for verification evidence and known limitations.
 
 ## Prerequisites
 
 - Fedora/Linux or a comparable Linux environment
-- Git and Make
+- Git, `uv`, and Python 3.12
 - Docker Engine with Compose, or rootless Podman plus a Compose provider
-- Python 3.12 and Node.js 22 are documented for later milestones; Milestone 0 does not install application dependencies
 
-## Setup
-
-```bash
-cp .env.example .env
-make check
-make db-up
-```
-
-On a rootless Podman setup, start its user socket once for the current login and override the Compose command:
+## One-command local run
 
 ```bash
-systemctl --user start podman.socket
-make CONTAINER_COMPOSE='podman compose' check
-make CONTAINER_COMPOSE='podman compose' db-up
+./scripts/install-aegisx
+aegisx
 ```
 
-Check PostgreSQL and stop it without deleting the named data volume:
+The install step is required once per checkout. After that, `aegisx` can be called from any directory. It starts PostgreSQL, applies Alembic migrations, starts the API, waits for readiness, and then runs the host agent. Press `Ctrl+C` to stop the API and agent. A PostgreSQL service that was already running is preserved.
+
+Useful commands:
 
 ```bash
-docker compose --env-file .env exec -T postgres pg_isready -U aegisx -d aegisx
-make db-down
+aegisx doctor
+aegisx stop
 ```
 
-Replace `docker compose` with `podman compose` when using Podman. Development defaults bind PostgreSQL only to `127.0.0.1`. The password in `.env.example` is not suitable for shared or production environments.
+The launcher tries Docker Compose and then rootless Podman Compose. On Podman systems it can start the current user's `podman.socket`; it never escalates privileges or deletes the named database volume. Override provider selection when required:
+
+```bash
+AEGISX_COMPOSE_COMMAND='podman compose' aegisx
+```
+
+Development defaults bind PostgreSQL only to `127.0.0.1`. The password in `.env.example` is not suitable for shared or production environments.
 
 ## Development
 
@@ -69,7 +64,7 @@ Replace `docker compose` with `podman compose` when using Podman. Development de
 
 ## Roadmap
 
-The project proceeds sequentially from backend and Linux agent foundations through network telemetry, detection, correlation, minimal UI, realtime notifications, Wi-Fi monitoring, AI investigation, safe validation, and final hardening. Detection-family priorities and false-positive requirements are tracked in [the detection backlog](docs/detection-backlog.md). The approved platform design is in `docs/superpowers/specs/`.
+The next work is telemetry quality, correlation quality, contextual Incident scoring, and production Linux-agent deployment. AI Investigator is no longer planned. Detection-family priorities and false-positive requirements are tracked in [the detection backlog](docs/detection-backlog.md).
 
 ## Limitations and security assumptions
 
@@ -78,4 +73,4 @@ The project proceeds sequentially from backend and Linux agent foundations throu
 - AegisX does not automatically remediate a host.
 - Host command lines and process metadata may be sensitive and require deliberate retention controls in later milestones.
 - Local Compose defaults are for development only and do not configure production TLS or credential management.
-# AegisX
+- The current polling Python agent is a development implementation, not a portable production endpoint agent.

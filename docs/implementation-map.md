@@ -1,16 +1,16 @@
 # AegisX Current Implementation Map
 
-This document maps the source code through the verified Milestone 5B hardening work. It does not treat plans, backlogs, or README claims as implementation evidence.
+This document maps the source code through the verified Milestone 6A Incident Foundation and one-command developer bundle. It does not treat plans, backlogs, or README claims as implementation evidence.
 
 ## 1. Current status
 
-The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, the Milestone 4 detection foundation with its first two rules, a narrow Milestone 5A correlation foundation, and the Milestone 6A Incident Foundation. Later detection packs, AI Investigator, UI, notifications, and response actions have not started.
+The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, deterministic detection/correlation foundations, the Milestone 6A Incident Foundation, and a one-command local developer launcher. Later detection packs, UI, notifications, and response actions have not started. AI Investigator has been removed from the roadmap.
 
 ### Implemented
 
 - PostgreSQL 17 development service through Compose.
 - FastAPI liveness/readiness, Linux device registration, bearer-token authentication, and typed idempotent telemetry ingestion.
-- Async SQLAlchemy Device/Event/Detection/CorrelationCandidate persistence and four Alembic migrations.
+- Async SQLAlchemy Device/Event/Detection/CorrelationCandidate/Incident persistence and five Alembic migrations.
 - Linux system snapshots plus process and network snapshot-transition collectors.
 - Agent normalization, registration, local identity/credential persistence, async-adapted bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
 - Schema-version-1 events: system status; process started/exited/resource usage; and network listener/connection observed/opened/closed.
@@ -31,7 +31,7 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 ### Planned only / not implemented
 
 - File, service, persistence, authentication-log, DNS, Wi-Fi, and LAN collectors.
-- Later detection packs, device-level risk aggregation, incidents, incident timelines, and AI analysis.
+- Later detection packs, device-level risk aggregation, Incident query/timeline APIs, and response decisions.
 - WebSocket, notifications, web application, attack-validation framework, coverage metrics, and systemd packaging.
 - Device listing/status APIs, event query APIs, incident APIs, retention policy, token rotation/revocation API, TLS deployment, and API container image.
 
@@ -163,7 +163,11 @@ AegisX/
 
 ### AI Investigator
 
-**Status: not implemented.** There is no provider interface, prompt, model, endpoint, or stored analysis.
+**Status: removed from the roadmap.** No AI provider, prompt, model, endpoint, dependency, or stored analysis is present on `main`.
+
+### Developer launcher
+
+**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies, migrates to Alembic head, waits for API readiness, and supervises the host agent. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
 
 ### Notification / UI
 
@@ -236,7 +240,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 
 | Classification | Divergence | Assessment |
 |---|---|---|
-| A | Incidents, AI, notifications, UI, and later detection packs are absent. | Expected roadmap state; do not infer them from the narrow correlation foundation. |
+| A | Notifications, UI, response execution, and later detection packs are absent. | Expected roadmap state; do not infer them from the current foundation. AI has been removed rather than deferred. |
 | A | File/service/Wi-Fi/DNS/authentication/LAN telemetry is absent. | Dependencies for later detection packs are not built. |
 | B | `runner.py: collect_once()` combines identity, credentials, collector orchestration, queueing, registration, delivery, and error policy. | Working but already broad; should be reviewed before more agent subsystems accumulate. |
 | C | The collector interface only exposes synchronous `collect()`, not `start()/stop()`. | Reasonable for polling snapshots; event-driven collectors may require a second interface later. |
@@ -274,8 +278,9 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | Detection | Foundation | `detection/`, `services/telemetry_ingestion.py`, `models/detection.py` | Pure rules, indexed selection, result mapping, and same-transaction persistence. |
 | Correlation | Foundation | `correlation/`, `services/correlation.py`, `models/correlation.py` | Deterministic, bounded process/listener Candidate creation; not an Incident or attack conclusion. |
 | Incident | Foundation (6A) | `models/incident.py`, `incident/policies.py`, `services/incident.py` | Promotion policy abstraction, advisory-lock serialization, sliding-window grouping, status/disposition lifecycle. |
+| Developer launcher | Yes | `tools/launcher/`, `scripts/install-aegisx` | Repository discovery, Compose fallback, migrations, readiness gating, process supervision, and safe cleanup. |
 | WebSocket | No | None | No realtime server implementation. |
-| AI | No | None | No provider or analysis code. |
+| AI | Removed | None | AI Investigator is not on the active roadmap. |
 
 ## 10. Recommended reading order
 
