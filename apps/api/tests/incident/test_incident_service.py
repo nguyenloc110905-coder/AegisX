@@ -3,20 +3,20 @@
 These tests run against an in-process registry using test-only promotion policies.
 No production promotion policy is introduced here.
 """
-from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 from uuid import uuid4
 
 import pytest
 
 from aegisx_api.incident.policies import (
     IncidentDecision,
-    IncidentPromotionPolicy,
     IncidentPolicyRegistry,
+    IncidentPromotionPolicy,
     registry,
 )
 from aegisx_api.services.incident import IncidentService
-
 
 # ---------------------------------------------------------------------------
 # Test-only promotion policy helpers
@@ -39,7 +39,7 @@ class AlwaysPromotePolicy(IncidentPromotionPolicy):
         self.description = "Promotes any candidate — for testing only"
         self.score_threshold = score_threshold
 
-    def evaluate(self, candidate: Any) -> Optional[IncidentDecision]:
+    def evaluate(self, candidate: Any) -> IncidentDecision | None:
         import hashlib
 
         grouping_key = hashlib.sha256(str(candidate.device_id).encode()).hexdigest()
@@ -63,7 +63,7 @@ class NeverPromotePolicy(IncidentPromotionPolicy):
         self.name = "Never Promote Test Policy"
         self.description = "Never promotes — for testing only"
 
-    def evaluate(self, candidate: Any) -> Optional[IncidentDecision]:
+    def evaluate(self, candidate: Any) -> IncidentDecision | None:
         return None
 
 
@@ -139,11 +139,11 @@ def test_registry_multi_strategy() -> None:
     class MultiStrategy(IncidentPromotionPolicy):
         policy_id = "MULTI"
         policy_version = 1
-        supported_strategy_ids = ["A", "B"]
+        supported_strategy_ids: ClassVar[list[str]] = ["A", "B"]
         name = "Multi"
         description = "Multi strategy policy"
 
-        def evaluate(self, candidate: Any) -> Optional[IncidentDecision]:
+        def evaluate(self, candidate: Any) -> IncidentDecision | None:
             return None
 
     p = MultiStrategy()
@@ -346,7 +346,6 @@ def test_hash_to_lock_id_collision_does_not_affect_grouping_key() -> None:
     mix Incident identities because the DB query always filters by the full
     64-character grouping_key string.
     """
-    svc = IncidentService()
     import hashlib
 
     # Fabricate two different keys and confirm they produce distinct grouping_keys

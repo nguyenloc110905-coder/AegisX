@@ -47,12 +47,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_detections_device_id", "detections", ["device_id"])
     op.create_index("ix_detections_source_event_id", "detections", ["source_event_id"])
-    op.create_index(
-        "ix_detections_device_timestamp", "detections", ["device_id", "timestamp"]
-    )
-    op.create_index(
-        "ix_detections_rule_timestamp", "detections", ["rule_id", "timestamp"]
-    )
+    op.create_index("ix_detections_device_timestamp", "detections", ["device_id", "timestamp"])
+    op.create_index("ix_detections_rule_timestamp", "detections", ["rule_id", "timestamp"])
 
 
 def downgrade() -> None:

@@ -24,8 +24,12 @@ def upgrade() -> None:
         sa.Column("architecture", sa.String(64), nullable=False),
         sa.Column("token_digest", sa.String(64), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id", name="pk_devices"),
         sa.UniqueConstraint("external_id", name="uq_devices_external_id"),
@@ -46,9 +50,13 @@ def upgrade() -> None:
         sa.Column("process_id", sa.Integer(), nullable=True),
         sa.Column("parent_process_id", sa.Integer(), nullable=True),
         sa.Column("executable", sa.String(4096), nullable=True),
-        sa.Column("ingested_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "ingested_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("schema_version > 0", name="ck_events_positive_schema_version"),
-        sa.ForeignKeyConstraint(["device_id"], ["devices.id"], name="fk_events_device_id_devices", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["device_id"], ["devices.id"], name="fk_events_device_id_devices", ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_events"),
     )
     op.create_index("ix_events_event_type", "events", ["event_type"])

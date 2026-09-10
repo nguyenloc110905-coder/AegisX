@@ -4,22 +4,24 @@ Requires AEGISX_TEST_POSTGRES_URL (postgresql+asyncpg://...).
 All tests assert real PostgreSQL behaviour: advisory locks, savepoints,
 concurrency, and schema constraints.
 """
+
 import asyncio
 import hashlib
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from aegisx_api.config import Settings
 from aegisx_api.incident.policies import (
     IncidentDecision,
-    IncidentPromotionPolicy,
     IncidentPolicyRegistry,
+    IncidentPromotionPolicy,
 )
 from aegisx_api.main import create_app
 from aegisx_api.models.correlation import CorrelationCandidate
@@ -62,12 +64,10 @@ class _EligiblePolicy(IncidentPromotionPolicy):
         self.score_threshold = score_threshold
         self.evidence_window_s = evidence_window_s
 
-    def evaluate(self, candidate: Any) -> Optional[IncidentDecision]:
+    def evaluate(self, candidate: Any) -> IncidentDecision | None:
         if candidate.aggregate_score < self.score_threshold:
             return None
-        gk = hashlib.sha256(
-            f"{candidate.device_id}:{self.policy_id}".encode()
-        ).hexdigest()
+        gk = hashlib.sha256(f"{candidate.device_id}:{self.policy_id}".encode()).hexdigest()
         return IncidentDecision(
             policy_id=self.policy_id,
             policy_version=self.policy_version,
@@ -178,15 +178,17 @@ async def _make_candidate(
 # Migration: upgrade / downgrade / upgrade
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_migration_upgrade_downgrade_upgrade(_pg_url: str) -> None:
     """Alembic round-trip: downgrade to 0004 then upgrade back to 0005."""
-    import subprocess, sys
+    import subprocess
+    import sys
 
     env = {**os.environ, "DATABASE_URL": _pg_url.replace("+asyncpg", "+asyncpg")}
 
     def alembic(*args: str) -> None:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [sys.executable, "-m", "alembic", *args],
             cwd=str(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
             env=env,
@@ -214,9 +216,12 @@ def test_migration_upgrade_downgrade_upgrade(_pg_url: str) -> None:
 # Schema: no active-group unique constraint, no production policy
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_no_active_group_unique_constraint(_settings: Settings, _svc: IncidentService) -> None:
+async def test_no_active_group_unique_constraint(
+    _settings: Settings, _svc: IncidentService
+) -> None:
     """Two OPEN Incidents with the same grouping_key must coexist (distinct episodes)."""
     app = create_app(_settings)
     async with app.router.lifespan_context(app):
@@ -232,28 +237,48 @@ async def test_no_active_group_unique_constraint(_settings: Settings, _svc: Inci
             ts1 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
             ts2 = datetime(2026, 1, 2, 0, 0, tzinfo=UTC)
             i1 = Incident(
-                incident_key=ik1, device_id=did, policy_id="P", policy_version=1,
-                grouping_key=gk, title="T", summary="S", status="OPEN",
-                disposition="UNDETERMINED", severity="low", risk_score=40,
-                confidence="medium", promotion_score_threshold=30,
-                promotion_confidence_threshold="medium", evidence_window_seconds=3600,
-                first_evidence_at=ts1, last_evidence_at=ts1,
+                incident_key=ik1,
+                device_id=did,
+                policy_id="P",
+                policy_version=1,
+                grouping_key=gk,
+                title="T",
+                summary="S",
+                status="OPEN",
+                disposition="UNDETERMINED",
+                severity="low",
+                risk_score=40,
+                confidence="medium",
+                promotion_score_threshold=30,
+                promotion_confidence_threshold="medium",
+                evidence_window_seconds=3600,
+                first_evidence_at=ts1,
+                last_evidence_at=ts1,
             )
             i2 = Incident(
-                incident_key=ik2, device_id=did, policy_id="P", policy_version=1,
-                grouping_key=gk, title="T", summary="S", status="OPEN",
-                disposition="UNDETERMINED", severity="low", risk_score=40,
-                confidence="medium", promotion_score_threshold=30,
-                promotion_confidence_threshold="medium", evidence_window_seconds=3600,
-                first_evidence_at=ts2, last_evidence_at=ts2,
+                incident_key=ik2,
+                device_id=did,
+                policy_id="P",
+                policy_version=1,
+                grouping_key=gk,
+                title="T",
+                summary="S",
+                status="OPEN",
+                disposition="UNDETERMINED",
+                severity="low",
+                risk_score=40,
+                confidence="medium",
+                promotion_score_threshold=30,
+                promotion_confidence_threshold="medium",
+                evidence_window_seconds=3600,
+                first_evidence_at=ts2,
+                last_evidence_at=ts2,
             )
             session.add_all([i1, i2])
             await session.commit()
 
             count = await session.scalar(
-                select(func.count()).select_from(Incident).where(
-                    Incident.grouping_key == gk
-                )
+                select(func.count()).select_from(Incident).where(Incident.grouping_key == gk)
             )
             assert count == 2, "Multiple OPEN Incidents must share one grouping_key"
             await session.delete(device)
@@ -265,15 +290,15 @@ async def test_no_active_group_unique_constraint(_settings: Settings, _svc: Inci
 async def test_no_production_policy_for_process_listener_activity(_settings: Settings) -> None:
     """The global production registry must have no policy for PROCESS_LISTENER_ACTIVITY."""
     from aegisx_api.incident.policies import registry as global_registry
+
     policies = global_registry.get_policies_for_strategy("PROCESS_LISTENER_ACTIVITY")
-    assert policies == [], (
-        "PROCESS_LISTENER_ACTIVITY must have NO production promotion policy"
-    )
+    assert policies == [], "PROCESS_LISTENER_ACTIVITY must have NO production promotion policy"
 
 
 # ---------------------------------------------------------------------------
 # Incident creation and in-window attachment
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -290,18 +315,16 @@ async def test_incident_creation_then_in_window_attachment(
                 await _svc.process_candidate(session, c1)
             await session.flush()
 
-            inc = await session.scalar(
-                select(Incident).where(Incident.device_id == device.id)
-            )
+            inc = await session.scalar(select(Incident).where(Incident.device_id == device.id))
             assert inc is not None
             assert inc.status == "OPEN"
             assert inc.disposition == "UNDETERMINED"
-            first_at = inc.first_evidence_at
             last_at = inc.last_evidence_at
 
             # Second candidate within window
             c2 = await _make_candidate(
-                session, device,
+                session,
+                device,
                 start=c1.start_timestamp + timedelta(minutes=5),
                 end=c1.end_timestamp + timedelta(minutes=10),
             )
@@ -326,6 +349,7 @@ async def test_incident_creation_then_in_window_attachment(
 # Out-of-window → new episode
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_out_of_window_candidate_creates_new_incident(
@@ -336,12 +360,15 @@ async def test_out_of_window_candidate_creates_new_incident(
         sf = app.state.session_factory
         async with sf() as session:
             device = await _make_device(session)
-            c1 = await _make_candidate(session, device, start=datetime(2026, 1, 1, 0, 0, tzinfo=UTC))
+            c1 = await _make_candidate(
+                session, device, start=datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+            )
             async with session.begin_nested():
                 await _svc.process_candidate(session, c1)
 
             c2 = await _make_candidate(
-                session, device,
+                session,
+                device,
                 start=datetime(2026, 1, 1, 5, 0, tzinfo=UTC),
             )
             async with session.begin_nested():
@@ -360,11 +387,10 @@ async def test_out_of_window_candidate_creates_new_incident(
 # RESOLVED Incident is non-attachable
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_resolved_incident_not_attachable(
-    _settings: Settings, _svc: IncidentService
-) -> None:
+async def test_resolved_incident_not_attachable(_settings: Settings, _svc: IncidentService) -> None:
     app = create_app(_settings)
     async with app.router.lifespan_context(app):
         sf = app.state.session_factory
@@ -386,19 +412,18 @@ async def test_resolved_incident_not_attachable(
 
             # A new candidate in the same window should NOT attach
             c2 = await _make_candidate(
-                session, device,
+                session,
+                device,
                 start=c1.start_timestamp + timedelta(minutes=1),
             )
             async with session.begin_nested():
                 await _svc.process_candidate(session, c2)
             await session.flush()
 
-            count = await session.scalar(
-                select(func.count()).select_from(Incident).where(Incident.device_id == device.id)
-            )
             # A new Incident should be created (resolved one is frozen) OR skipped
             # either way the resolved Incident must still have exactly 1 candidate
             from aegisx_api.models.incident import incident_correlation_candidates as icc
+
             attached = await session.scalar(
                 select(func.count()).select_from(icc).where(icc.c.incident_id == inc.id)
             )
@@ -410,6 +435,7 @@ async def test_resolved_incident_not_attachable(
 # ---------------------------------------------------------------------------
 # last_evidence_at never moves backward (out-of-order evidence)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -451,6 +477,7 @@ async def test_last_evidence_at_never_moves_backward(
 # Duplicate candidate processing is idempotent
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_duplicate_candidate_processing_is_idempotent(
@@ -477,6 +504,7 @@ async def test_duplicate_candidate_processing_is_idempotent(
             assert count == 1, "Duplicate candidate must not create a second Incident"
 
             from aegisx_api.models.incident import incident_correlation_candidates as icc
+
             attached = await session.scalar(
                 select(func.count()).select_from(icc).where(icc.c.candidate_id == c1.id)
             )
@@ -488,6 +516,7 @@ async def test_duplicate_candidate_processing_is_idempotent(
 # ---------------------------------------------------------------------------
 # Savepoint failure preserves Event, Detection, Candidate
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -540,6 +569,7 @@ async def test_incident_savepoint_failure_preserves_event_detection_candidate(
 # Ambiguous incidents → fail closed
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_ambiguous_multiple_eligible_incidents_fail_closed(
@@ -557,23 +587,33 @@ async def test_ambiguous_multiple_eligible_incidents_fail_closed(
 
             # Determine the grouping_key our policy would generate for this device
             policy = _EligiblePolicy()
-            gk = hashlib.sha256(
-                f"{did}:{policy.policy_id}".encode()
-            ).hexdigest()
+            gk = hashlib.sha256(f"{did}:{policy.policy_id}".encode()).hexdigest()
 
             # Force-create two OPEN Incidents with the same grouping_key and overlapping windows
             base_ts = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
             for seed in [b"amb1", b"amb2"]:
                 ik = hashlib.sha256(seed).hexdigest()
-                session.add(Incident(
-                    incident_key=ik, device_id=did, policy_id=policy.policy_id,
-                    policy_version=1, grouping_key=gk, title="T", summary="S",
-                    status="OPEN", disposition="UNDETERMINED", severity="low",
-                    risk_score=40, confidence="medium", promotion_score_threshold=30,
-                    promotion_confidence_threshold="medium",
-                    evidence_window_seconds=3600,
-                    first_evidence_at=base_ts, last_evidence_at=base_ts,
-                ))
+                session.add(
+                    Incident(
+                        incident_key=ik,
+                        device_id=did,
+                        policy_id=policy.policy_id,
+                        policy_version=1,
+                        grouping_key=gk,
+                        title="T",
+                        summary="S",
+                        status="OPEN",
+                        disposition="UNDETERMINED",
+                        severity="low",
+                        risk_score=40,
+                        confidence="medium",
+                        promotion_score_threshold=30,
+                        promotion_confidence_threshold="medium",
+                        evidence_window_seconds=3600,
+                        first_evidence_at=base_ts,
+                        last_evidence_at=base_ts,
+                    )
+                )
             await session.flush()
 
             # A new candidate whose window overlaps both
@@ -590,22 +630,29 @@ async def test_ambiguous_multiple_eligible_incidents_fail_closed(
 # Advisory lock timeout → fail closed
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_advisory_lock_timeout_fails_closed(_settings: Settings, _registry) -> None:
     """Hold the advisory lock in one transaction; second call must timeout and fail closed."""
     engine = create_async_engine(TEST_URL)
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     svc_fast = IncidentService(
         evidence_window=timedelta(hours=1),
-        lock_timeout_ms=300,   # very short timeout
+        lock_timeout_ms=300,  # very short timeout
     )
     svc_fast._registry = _registry
 
     try:
-        async with SessionLocal() as s1, SessionLocal() as s2:
-            dev1 = await _make_device(s1)
+        async with session_factory() as setup_session:
+            device = await _make_device(setup_session)
+            device_id = device.id
+            await setup_session.commit()
+
+        async with session_factory() as s1, session_factory() as s2:
+            dev1 = await s1.get(Device, device_id)
+            assert dev1 is not None
             c1 = await _make_candidate(s1, dev1)
 
             # Compute the lock_id for this candidate's grouping_key
@@ -618,18 +665,21 @@ async def test_advisory_lock_timeout_fails_closed(_settings: Settings, _registry
             await s1.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": lock_id})
 
             # Session 2 must fail quickly (300 ms timeout)
-            dev2 = await _make_device(s2)
+            dev2 = await s2.get(Device, device_id)
+            assert dev2 is not None
             c2 = await _make_candidate(s2, dev2)
-            # patch c2 to same grouping key
-            c2.device_id = dev1.id
 
-            with pytest.raises(Exception):
+            with pytest.raises(DBAPIError, match="statement timeout"):
                 async with s2.begin_nested():
                     await svc_fast.process_candidate(s2, c2)
 
             await s1.execute(text("ROLLBACK"))
-            await s1.delete(dev1)
-            await s1.commit()
+
+        async with session_factory() as cleanup_session:
+            persisted_device = await cleanup_session.get(Device, device_id)
+            assert persisted_device is not None
+            await cleanup_session.delete(persisted_device)
+            await cleanup_session.commit()
     finally:
         await engine.dispose()
 
@@ -638,24 +688,25 @@ async def test_advisory_lock_timeout_fails_closed(_settings: Settings, _registry
 # Concurrent same-group creation → only one Incident created
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_concurrent_same_group_does_not_duplicate_incident(
     _settings: Settings, _registry
 ) -> None:
     engine = create_async_engine(TEST_URL)
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
     svc = IncidentService(evidence_window=timedelta(hours=1), lock_timeout_ms=5000)
     svc._registry = _registry
 
     try:
-        async with SessionLocal() as setup_session:
+        async with session_factory() as setup_session:
             device = await _make_device(setup_session)
             did = device.id
             await setup_session.commit()
 
         async def promote_once():
-            async with SessionLocal() as session:
+            async with session_factory() as session:
                 d = await session.get(Device, did)
                 c = await _make_candidate(session, d)  # type: ignore[arg-type]
                 try:
@@ -669,10 +720,7 @@ async def test_concurrent_same_group_does_not_duplicate_incident(
 
         results = await asyncio.gather(promote_once(), promote_once(), return_exceptions=True)
 
-        async with SessionLocal() as session:
-            count = await session.scalar(
-                select(func.count()).select_from(Incident).where(Incident.device_id == did)
-            )
+        async with session_factory() as session:
             # Both candidates are different objects (different correlation_keys / timestamps)
             # so they may each create a new episode — this is acceptable.
             # What must NOT happen: the same single candidate attached twice or DB integrity errors.
@@ -691,6 +739,7 @@ async def test_concurrent_same_group_does_not_duplicate_incident(
 # ---------------------------------------------------------------------------
 # Advisory lock key: full grouping_key used for DB identity
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -715,9 +764,9 @@ async def test_grouping_key_full_string_used_for_identity(
             await session.flush()
 
             incidents = list(
-                (await session.scalars(
-                    select(Incident).where(Incident.device_id == device.id)
-                )).all()
+                (
+                    await session.scalars(select(Incident).where(Incident.device_id == device.id))
+                ).all()
             )
             # Could be 1 (c2 attached) or 2 (out-of-window new episode) — both correct
             # Key invariant: grouping_key on each Incident is the 64-char SHA-256
@@ -732,6 +781,7 @@ async def test_grouping_key_full_string_used_for_identity(
 # ---------------------------------------------------------------------------
 # Audit trail: transition recorded on create
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -751,11 +801,13 @@ async def test_status_transition_audit_trail_on_creation(
             inc = await session.scalar(select(Incident).where(Incident.device_id == device.id))
             assert inc is not None
             transitions = list(
-                (await session.scalars(
-                    select(IncidentStatusTransition).where(
-                        IncidentStatusTransition.incident_id == inc.id
+                (
+                    await session.scalars(
+                        select(IncidentStatusTransition).where(
+                            IncidentStatusTransition.incident_id == inc.id
+                        )
                     )
-                )).all()
+                ).all()
             )
             assert len(transitions) == 1
             t = transitions[0]
@@ -774,15 +826,18 @@ async def test_status_transition_audit_trail_on_creation(
 # Timeout configurability via Settings
 # ---------------------------------------------------------------------------
 
+
 def test_advisory_lock_timeout_is_configurable_via_settings():
     """Confirm the timeout is a Settings field with a default, not a magic constant."""
-    s = Settings(_env_file=None, environment="test",
-                 database_url="postgresql+asyncpg://x/y")
+    s = Settings(_env_file=None, environment="test", database_url="postgresql+asyncpg://x/y")
     assert s.incident_advisory_lock_timeout_ms == 2000
 
-    s2 = Settings(_env_file=None, environment="test",
-                  database_url="postgresql+asyncpg://x/y",
-                  incident_advisory_lock_timeout_ms=500)
+    s2 = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="postgresql+asyncpg://x/y",
+        incident_advisory_lock_timeout_ms=500,
+    )
     assert s2.incident_advisory_lock_timeout_ms == 500
 
     svc = IncidentService(lock_timeout_ms=500)

@@ -1,7 +1,6 @@
 import hashlib
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Optional
 from uuid import uuid4
 
 import pytest
@@ -19,7 +18,7 @@ from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
 from aegisx_api.models.device import Device
 from aegisx_api.models.event import Event
-from aegisx_api.models.incident import Incident, IncidentStatusTransition
+from aegisx_api.models.incident import Incident
 
 
 class EligiblePromotionPolicy(IncidentPromotionPolicy):
@@ -31,7 +30,7 @@ class EligiblePromotionPolicy(IncidentPromotionPolicy):
         self.description = "Test policy for integration tests"
         self.score_threshold = score_threshold
 
-    def evaluate(self, candidate: CorrelationCandidate) -> Optional[IncidentDecision]:
+    def evaluate(self, candidate: CorrelationCandidate) -> IncidentDecision | None:
         if candidate.aggregate_score >= self.score_threshold:
             return IncidentDecision(
                 policy_id=self.policy_id,
@@ -125,7 +124,9 @@ async def test_incident_creation_and_attachment() -> None:
 
             # Assert incident 1 created
             incident = await session.scalar(
-                select(Incident).where(Incident.device_id == device_id).options(selectinload(Incident.candidates))
+                select(Incident)
+                .where(Incident.device_id == device_id)
+                .options(selectinload(Incident.candidates))
             )
             assert incident is not None
             assert incident.status == "OPEN"
@@ -228,7 +229,9 @@ async def test_incident_creation_and_attachment() -> None:
                 await app.state.incident_service.process_candidate(session, candidate3)
 
             incidents = list(
-                (await session.scalars(select(Incident).where(Incident.device_id == device_id))).all()
+                (
+                    await session.scalars(select(Incident).where(Incident.device_id == device_id))
+                ).all()
             )
             assert len(incidents) == 2
 
@@ -257,7 +260,7 @@ async def test_incident_savepoint_failure_preserves_candidate() -> None:
             )
             session.add(device)
             await session.flush()
-            
+
             event1 = Event(
                 id=uuid4(),
                 device_id=device.id,
@@ -296,7 +299,7 @@ async def test_incident_savepoint_failure_preserves_candidate() -> None:
             session.add(candidate1)
             await session.flush()
             cand_id = candidate1.id
-            
+
             # simulate savepoint failure
             try:
                 async with session.begin_nested():
@@ -304,17 +307,21 @@ async def test_incident_savepoint_failure_preserves_candidate() -> None:
                     raise RuntimeError("Mock failure during incident promotion")
             except RuntimeError:
                 pass
-                
+
             await session.commit()
-            
+
             # verify candidate exists but incident does not
         async with app.state.session_factory() as session:
-            cand = await session.scalar(select(CorrelationCandidate).where(CorrelationCandidate.id == cand_id))
+            cand = await session.scalar(
+                select(CorrelationCandidate).where(CorrelationCandidate.id == cand_id)
+            )
             assert cand is not None
-            
-            inc = await session.scalar(select(func.count()).select_from(Incident).where(Incident.device_id == device.id))
+
+            inc = await session.scalar(
+                select(func.count()).select_from(Incident).where(Incident.device_id == device.id)
+            )
             assert inc == 0
-            
+
             device = await session.scalar(select(Device).where(Device.id == cand.device_id))
             await session.delete(device)
             await session.commit()

@@ -59,8 +59,10 @@ class IncidentService:
             return
 
         # Check if already attached
-        existing_attachment_stmt = select(Incident.id).join(Incident.candidates).where(
-            CorrelationCandidate.id == candidate.id
+        existing_attachment_stmt = (
+            select(Incident.id)
+            .join(Incident.candidates)
+            .where(CorrelationCandidate.id == candidate.id)
         )
         existing_attachment = (await session.scalars(existing_attachment_stmt)).first()
         if existing_attachment:
@@ -129,12 +131,8 @@ class IncidentService:
             incident = in_window_incidents[0]
             outcome = "attached"
 
-            incident.first_evidence_at = min(
-                incident.first_evidence_at, candidate.start_timestamp
-            )
-            incident.last_evidence_at = max(
-                incident.last_evidence_at, candidate.end_timestamp
-            )
+            incident.first_evidence_at = min(incident.first_evidence_at, candidate.start_timestamp)
+            incident.last_evidence_at = max(incident.last_evidence_at, candidate.end_timestamp)
             incident.version += 1
 
             incident.candidates.append(candidate)
@@ -151,9 +149,7 @@ class IncidentService:
                     incident.events.append(e)
                     existing_ev_ids.add(e.id)
 
-            incident.risk_score = min(
-                100, sum(d.score_contribution for d in incident.detections)
-            )
+            incident.risk_score = min(100, sum(d.score_contribution for d in incident.detections))
             incident.severity = self._compute_severity(incident.risk_score)
             if candidate.confidence == "high":
                 incident.confidence = "high"
@@ -201,8 +197,7 @@ class IncidentService:
                 actor_type="system",
                 actor_id=None,
                 reason=(
-                    "Incident automatically created from"
-                    " correlation candidate promotion policy."
+                    "Incident automatically created from correlation candidate promotion policy."
                 ),
                 incident_version=1,
             )
