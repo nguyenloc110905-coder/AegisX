@@ -141,3 +141,66 @@ def test_cli_reports_project_discovery_failure_without_traceback(
 
     assert main(["doctor"]) == 2
     assert "Could not locate AegisX" in capsys.readouterr().err
+
+
+def test_run_command_holds_single_instance_state_while_runtime_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    events: list[str] = []
+
+    class FakeState:
+        @classmethod
+        def default(cls) -> "FakeState":
+            return cls()
+
+        def __enter__(self) -> "FakeState":
+            events.append("state-enter")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("state-exit")
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def run(self) -> int:
+            events.append("runtime-run")
+            return 0
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", FakeState)
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+
+    assert main([]) == 0
+    assert events == ["state-enter", "runtime-run", "state-exit"]
+
+
+def test_duplicate_launcher_is_reported_without_starting_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+
+    class RejectingState:
+        @classmethod
+        def default(cls) -> "RejectingState":
+            return cls()
+
+        def __enter__(self) -> "RejectingState":
+            from aegisx_launcher.state import LauncherAlreadyRunningError
+
+            raise LauncherAlreadyRunningError("already active")
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", RejectingState)
+
+    assert main([]) == 3
+    assert "already active" in capsys.readouterr().err

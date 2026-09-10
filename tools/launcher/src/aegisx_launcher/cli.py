@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from aegisx_launcher.project import ProjectDiscoveryError, find_project_root, select_env_file
 from aegisx_launcher.runtime import AegisXRuntime
+from aegisx_launcher.state import LauncherState, LauncherStateError
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -29,4 +30,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return runtime.doctor()
     if arguments.command == "stop":
         return runtime.stop()
-    return runtime.run()
+    try:
+        with LauncherState.default():
+            return runtime.run()
+    except LauncherStateError as error:
+        print(f"[failed] {error}", file=sys.stderr)
+        return 3

@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required: https://docs.astral.sh/uv/" >&2
+    exit 1
+fi
+
+exec uv tool install --editable "$project_root/tools/launcher" --force
+

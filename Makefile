@@ -6,7 +6,7 @@ COMPOSE := $(CONTAINER_COMPOSE) --env-file $(ENV_FILE)
 
 UV ?= $(HOME)/.local/bin/uv
 
-.PHONY: check compose-config db-up db-down db-logs api-sync api-test api-lint api-type api-migrate api-run agent-sync agent-test agent-lint agent-type agent-once agent-run
+.PHONY: check compose-config db-up db-down db-logs api-sync api-test api-lint api-type api-migrate api-run agent-sync agent-test agent-lint agent-type agent-once agent-run launcher-install launcher-test launcher-lint launcher-type
 
 check:
 	sh scripts/check-foundation.sh
@@ -60,3 +60,15 @@ agent-once:
 
 agent-run:
 	$(UV) run --project apps/agent aegisx-agent run
+
+launcher-install:
+	./scripts/install-aegisx
+
+launcher-test:
+	$(UV) run --project tools/launcher pytest tools/launcher/tests
+
+launcher-lint:
+	$(UV) run --project tools/launcher ruff check tools/launcher/src tools/launcher/tests
+
+launcher-type:
+	cd tools/launcher && $(UV) run mypy
