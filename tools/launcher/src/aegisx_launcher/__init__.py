@@ -1,2 +1,1 @@
 """Local AegisX developer launcher."""
-

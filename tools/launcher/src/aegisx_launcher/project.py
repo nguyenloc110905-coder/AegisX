@@ -48,4 +48,3 @@ def select_env_file(root: Path) -> Path:
         if candidate.is_file():
             return candidate
     raise ProjectDiscoveryError(f"No environment file found under AegisX root: {root}")
-

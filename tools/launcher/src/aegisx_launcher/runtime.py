@@ -9,7 +9,7 @@ from typing import Protocol
 from aegisx_launcher.commands import CommandResult, CommandRunner
 from aegisx_launcher.compose import ComposeProvider, discover_compose_providers
 
-API_READY_URL = "http://127.0.0.1:8000/api/v1/health/ready"
+API_READY_URL = "http://127.0.0.1:8000/health/ready"
 
 
 class Process(Protocol):
@@ -138,6 +138,22 @@ class AegisXRuntime:
                 cwd=self._root,
                 timeout=120,
             )
+            if (
+                started.returncode != 0
+                and candidate.command[0] == "podman"
+                and self._runner.executable_exists("systemctl")
+            ):
+                socket = self._runner.run(
+                    ("systemctl", "--user", "start", "podman.socket"),
+                    cwd=self._root,
+                    timeout=30,
+                )
+                if socket.returncode == 0:
+                    started = self._runner.run(
+                        candidate.argv(self._env_file, "up", "-d", "--wait", "postgres"),
+                        cwd=self._root,
+                        timeout=120,
+                    )
             if started.returncode == 0:
                 provider = candidate
                 postgres_started_here = not was_running

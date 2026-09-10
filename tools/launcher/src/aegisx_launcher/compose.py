@@ -52,8 +52,8 @@ def discover_compose_providers(
     *,
     override: str | None = None,
 ) -> tuple[ComposeProvider, ...]:
-    configured_override = override if override is not None else os.environ.get(
-        "AEGISX_COMPOSE_COMMAND"
+    configured_override = (
+        override if override is not None else os.environ.get("AEGISX_COMPOSE_COMMAND")
     )
     commands = (
         (parse_compose_override(configured_override),)

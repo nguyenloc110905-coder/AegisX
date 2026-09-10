@@ -12,7 +12,7 @@ class CommandResult:
     stderr: str
 
     def diagnostic(self, limit: int = 500) -> str:
-        text = (self.stderr.strip() or self.stdout.strip() or f"exit code {self.returncode}")
+        text = self.stderr.strip() or self.stdout.strip() or f"exit code {self.returncode}"
         if len(text) <= limit:
             return text
         if limit <= 3:

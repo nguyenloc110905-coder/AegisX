@@ -12,7 +12,7 @@ class FakeRunner:
         self.calls: list[tuple[str, ...]] = []
 
     def executable_exists(self, executable: str) -> bool:
-        return executable in {"uv", "docker", "podman"}
+        return executable in {"uv", "docker", "podman", "systemctl"}
 
     def run(
         self,
@@ -100,7 +100,7 @@ def test_runtime_falls_back_provider_and_starts_agent_only_after_readiness(tmp_p
     assert runner.calls.index(("uv", "sync", "--project", "apps/api", "--all-groups")) < len(
         runner.calls
     )
-    assert readiness_calls == ["http://127.0.0.1:8000/api/v1/health/ready"]
+    assert readiness_calls == ["http://127.0.0.1:8000/health/ready"]
     assert processes.calls == [
         (
             "uv",
@@ -136,6 +136,39 @@ def test_readiness_failure_prevents_agent_start_and_cleans_up(tmp_path: Path) ->
     assert len(processes.calls) == 1
     assert api.terminated
     assert any("stop" in call and "postgres" in call for call in runner.calls)
+
+
+def test_podman_runtime_starts_user_socket_once_then_retries(tmp_path: Path) -> None:
+    socket_started = False
+
+    def command(argv: tuple[str, ...]) -> tuple[int, str, str]:
+        nonlocal socket_started
+        if argv[:3] == ("systemctl", "--user", "start"):
+            socket_started = True
+            return 0, "", ""
+        if argv[:2] == ("podman", "compose") and "up" in argv and not socket_started:
+            return 1, "", "socket unavailable"
+        return 0, "", ""
+
+    runner = FakeRunner(command)
+    api = FakeProcess([4])
+    agent = FakeProcess([None])
+    runtime = AegisXRuntime(
+        tmp_path,
+        tmp_path / ".env",
+        runner=runner,
+        providers=(ComposeProvider(("podman", "compose")),),
+        process_factory=FakeProcessFactory([api, agent]),
+        readiness_waiter=lambda _url, _timeout: True,
+        sleep=lambda _: None,
+    )
+
+    assert runtime.run() == 4
+    assert ("systemctl", "--user", "start", "podman.socket") in runner.calls
+    podman_up_calls = [
+        call for call in runner.calls if call[:2] == ("podman", "compose") and "up" in call
+    ]
+    assert len(podman_up_calls) == 2
 
 
 def test_existing_postgres_is_not_stopped_when_child_fails(tmp_path: Path) -> None:

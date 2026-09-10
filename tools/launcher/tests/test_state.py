@@ -82,7 +82,7 @@ def test_installer_invokes_uv_tool_install_with_absolute_launcher_path(tmp_path:
     args_file = tmp_path / "args"
     fake_uv = fake_bin / "uv"
     fake_uv.write_text(
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$AEGISX_TEST_ARGS\"\n",
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$AEGISX_TEST_ARGS"\n',
         encoding="utf-8",
     )
     fake_uv.chmod(0o755)
