@@ -88,3 +88,56 @@ def test_help_is_available_without_discovering_a_project(
 
     assert raised.value.code == 0
     assert "Run the local AegisX development stack" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_method", "expected_code"),
+    [([], "run", 7), (["doctor"], "doctor", 8), (["stop"], "stop", 9)],
+)
+def test_cli_dispatches_to_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    expected_method: str,
+    expected_code: int,
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    env_file = project / ".env.example"
+    env_file.write_text("MODE=test\n", encoding="utf-8")
+    called: list[str] = []
+
+    class FakeRuntime:
+        def __init__(self, root: Path, selected_env: Path) -> None:
+            assert root == project
+            assert selected_env == env_file
+
+        def run(self) -> int:
+            called.append("run")
+            return 7
+
+        def doctor(self) -> int:
+            called.append("doctor")
+            return 8
+
+        def stop(self) -> int:
+            called.append("stop")
+            return 9
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+
+    assert main(arguments) == expected_code
+    assert called == [expected_method]
+
+
+def test_cli_reports_project_discovery_failure_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AEGISX_PROJECT_ROOT", raising=False)
+    monkeypatch.setattr("aegisx_launcher.project.PACKAGE_LOCATION", tmp_path)
+
+    assert main(["doctor"]) == 2
+    assert "Could not locate AegisX" in capsys.readouterr().err
