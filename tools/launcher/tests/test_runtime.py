@@ -1,9 +1,11 @@
+import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 from aegisx_launcher.commands import CommandResult
 from aegisx_launcher.compose import ComposeProvider
-from aegisx_launcher.runtime import AegisXRuntime, wait_for_readiness
+from aegisx_launcher.runtime import AegisXRuntime, _spawn_process, wait_for_readiness
 
 
 class FakeRunner:
@@ -68,6 +70,20 @@ class FakeProcessFactory:
 
 def _providers() -> tuple[ComposeProvider, ...]:
     return (ComposeProvider(("docker", "compose")), ComposeProvider(("podman", "compose")))
+
+
+def test_spawned_process_remains_in_launchers_terminal_process_group(tmp_path: Path) -> None:
+    process = _spawn_process(
+        (sys.executable, "-c", "import time; time.sleep(30)"),
+        cwd=tmp_path,
+    )
+
+    try:
+        assert os.getsid(process.pid) == os.getsid(0)
+        assert os.getpgid(process.pid) == os.getpgrp()
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
 
 
 def test_runtime_falls_back_provider_and_starts_agent_only_after_readiness(tmp_path: Path) -> None:

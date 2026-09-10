@@ -63,7 +63,6 @@ def _spawn_process(argv: tuple[str, ...], *, cwd: Path, quiet: bool = False) -> 
     return subprocess.Popen(  # noqa: S603
         argv,
         cwd=cwd,
-        start_new_session=True,
         stdout=output,
         stderr=output,
     )
