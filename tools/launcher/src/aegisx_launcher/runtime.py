@@ -1,3 +1,5 @@
+import os
+import shlex
 import subprocess
 import time
 import urllib.error
@@ -118,6 +120,59 @@ class AegisXRuntime:
                 return 0
         print("[failed] could not stop PostgreSQL with any Compose provider")
         return 1
+
+    def dev_reset(self, *, confirmed: bool) -> int:
+        if not confirmed:
+            print("[refused] dev-reset requires explicit confirmation: aegisx dev-reset --yes")
+            return 2
+        environment = self._selected_environment()
+        if environment != "development":
+            print(
+                f"[refused] dev-reset is restricted to development; selected environment: "
+                f"{environment or 'invalid'}"
+            )
+            return 2
+        providers = self._providers()
+        if not providers:
+            print("[failed] no valid Docker or Podman Compose provider")
+            return 1
+        for provider in providers:
+            result = self._runner.run(
+                provider.argv(self._env_file, "down", "--volumes", "--remove-orphans"),
+                cwd=self._root,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                print(
+                    "[ok] PostgreSQL evidence was removed; "
+                    "agent identity and outbox were preserved."
+                )
+                return 0
+            print(f"[retry] {provider.name} could not reset development data")
+        print("[failed] development data could not be reset with any Compose provider")
+        return 1
+
+    def _selected_environment(self) -> str:
+        for variable in ("AEGISX_ENV", "AEGISX_ENVIRONMENT"):
+            if variable in os.environ:
+                return os.environ[variable].strip().lower()
+        try:
+            lines = self._env_file.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return ""
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, raw_value = stripped.split("=", 1)
+            if key.strip() not in {"AEGISX_ENV", "AEGISX_ENVIRONMENT"}:
+                continue
+            try:
+                values = shlex.split(raw_value, comments=True, posix=True)
+            except ValueError:
+                return ""
+            return values[0].strip().lower() if len(values) == 1 else ""
+        return "development"
 
     def run(self, *, show_ui: bool = True) -> int:
         if not self._runner.executable_exists("uv"):

@@ -198,6 +198,48 @@ def test_run_no_ui_dispatches_log_mode(tmp_path: Path, monkeypatch: pytest.Monke
     assert selected == [False]
 
 
+@pytest.mark.parametrize(
+    ("arguments", "confirmed"),
+    [(["dev-reset"], False), (["dev-reset", "--yes"], True)],
+)
+def test_dev_reset_dispatches_confirmation_while_holding_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    confirmed: bool,
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("AEGISX_ENV=development\n", encoding="utf-8")
+    events: list[str] = []
+
+    class FakeState:
+        @classmethod
+        def default(cls) -> "FakeState":
+            return cls()
+
+        def __enter__(self) -> "FakeState":
+            events.append("state-enter")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("state-exit")
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def dev_reset(self, *, confirmed: bool) -> int:
+            events.append(f"dev-reset:{confirmed}")
+            return 0
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", FakeState)
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+
+    assert main(arguments) == 0
+    assert events == ["state-enter", f"dev-reset:{confirmed}", "state-exit"]
+
+
 def test_duplicate_launcher_is_reported_without_starting_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

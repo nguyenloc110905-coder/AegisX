@@ -387,21 +387,21 @@ git commit -m "feat(console): show truthful telemetry recency"
 - CLI holds `LauncherState.default()` while executing reset, so another live launcher causes existing exit code 3 and no reset.
 - Environment parsing checks process `AEGISX_ENV`/`AEGISX_ENVIRONMENT` first, then the selected env file, and treats an absent value as the API default `development`; explicit values other than `development` fail closed.
 
-- [ ] **Step 1: Add failing CLI dispatch/refusal tests**
+- [x] **Step 1: Add failing CLI dispatch/refusal tests**
 
 Extend the fake runtime with `dev_reset(confirmed: bool)`. Assert `main(["dev-reset"])` dispatches `False`, `main(["dev-reset", "--yes"])` dispatches `True`, and both use `LauncherState` ownership just like `run`.
 
-- [ ] **Step 2: Run CLI tests and confirm RED**
+- [x] **Step 2: Run CLI tests and confirm RED**
 
 Run: `uv run --project tools/launcher pytest tools/launcher/tests/test_project.py -q`
 
 Expected: argparse rejects `dev-reset` and `--yes`.
 
-- [ ] **Step 3: Add CLI syntax and ownership guard**
+- [x] **Step 3: Add CLI syntax and ownership guard**
 
 Add `dev-reset` to command choices and `--yes` as a boolean flag. Wrap only `run` and `dev-reset` in `LauncherState.default()`; dispatch confirmation to the runtime method.
 
-- [ ] **Step 4: Add failing runtime safety tests**
+- [x] **Step 4: Add failing runtime safety tests**
 
 Cover these literal outcomes:
 
@@ -414,13 +414,13 @@ Cover these literal outcomes:
 
 Use only `FakeRunner`; no test may invoke real Compose volume deletion.
 
-- [ ] **Step 5: Run runtime tests and confirm RED**
+- [x] **Step 5: Run runtime tests and confirm RED**
 
 Run: `uv run --project tools/launcher pytest tools/launcher/tests/test_runtime.py -q`
 
 Expected: `AegisXRuntime.dev_reset` is absent.
 
-- [ ] **Step 6: Implement fail-closed reset**
+- [x] **Step 6: Implement fail-closed reset**
 
 Read only the selected env file, accepting shell-style comments and optional quotes for `AEGISX_ENV` or `AEGISX_ENVIRONMENT`. Do not source or execute the file. After confirmation and environment checks, iterate validated providers and run:
 
@@ -430,7 +430,7 @@ provider.argv(self._env_file, "down", "--volumes", "--remove-orphans")
 
 Never touch `AEGISX_AGENT_STATE_DIR`.
 
-- [ ] **Step 7: Verify and commit Task 4**
+- [x] **Step 7: Verify and commit Task 4**
 
 Run:
 

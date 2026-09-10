@@ -12,11 +12,21 @@ def _parser() -> argparse.ArgumentParser:
         prog="aegisx",
         description="Run the local AegisX development stack.",
     )
-    parser.add_argument("command", nargs="?", choices=("run", "doctor", "stop"), default="run")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("run", "doctor", "stop", "dev-reset"),
+        default="run",
+    )
     parser.add_argument(
         "--no-ui",
         action="store_true",
         help="run API and agent logs without the terminal operator console",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm destructive development-only operations",
     )
     return parser
 
@@ -37,6 +47,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return runtime.stop()
     try:
         with LauncherState.default():
+            if arguments.command == "dev-reset":
+                return runtime.dev_reset(confirmed=arguments.yes)
             return runtime.run(show_ui=not arguments.no_ui)
     except LauncherStateError as error:
         print(f"[failed] {error}", file=sys.stderr)

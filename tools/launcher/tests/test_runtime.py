@@ -3,6 +3,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
 from aegisx_launcher.commands import CommandResult
 from aegisx_launcher.compose import ComposeProvider
 from aegisx_launcher.runtime import AegisXRuntime, _spawn_process, wait_for_readiness
@@ -289,6 +291,80 @@ def test_stop_uses_first_provider_that_succeeds(tmp_path: Path) -> None:
     assert runtime.stop() == 0
     stop_calls = [call for call in runner.calls if "stop" in call]
     assert [call[0] for call in stop_calls] == ["docker", "podman"]
+
+
+def test_dev_reset_refuses_without_confirmation(tmp_path: Path) -> None:
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, tmp_path / ".env", runner=runner, providers=_providers())
+
+    assert runtime.dev_reset(confirmed=False) == 2
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize("variable", ["AEGISX_ENV", "AEGISX_ENVIRONMENT"])
+def test_dev_reset_refuses_non_development_process_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variable: str,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("AEGISX_ENV=development\n", encoding="utf-8")
+    monkeypatch.setenv(variable, "production")
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, env_file, runner=runner, providers=_providers())
+
+    assert runtime.dev_reset(confirmed=True) == 2
+    assert runner.calls == []
+
+
+def test_dev_reset_refuses_non_development_selected_env_file(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("  AEGISX_ENVIRONMENT = 'production' # protected\n", encoding="utf-8")
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, env_file, runner=runner, providers=_providers())
+
+    assert runtime.dev_reset(confirmed=True) == 2
+    assert runner.calls == []
+
+
+def test_dev_reset_removes_compose_volumes_and_preserves_agent_state_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("AEGISX_ENV", raising=False)
+    monkeypatch.delenv("AEGISX_ENVIRONMENT", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("AEGISX_ENV=development\n", encoding="utf-8")
+    runner = FakeRunner(lambda _: (0, "", ""))
+    provider = ComposeProvider(("docker", "compose"))
+    runtime = AegisXRuntime(tmp_path, env_file, runner=runner, providers=(provider,))
+
+    assert runtime.dev_reset(confirmed=True) == 0
+    assert runner.calls == [provider.argv(env_file, "down", "--volumes", "--remove-orphans")]
+    output = capsys.readouterr().out
+    assert "PostgreSQL evidence was removed" in output
+    assert "agent identity and outbox were preserved" in output
+
+
+def test_dev_reset_falls_back_between_providers(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("AEGISX_ENV=development\n", encoding="utf-8")
+    runner = FakeRunner(lambda argv: (1, "", "failed") if argv[0] == "docker" else (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, env_file, runner=runner, providers=_providers())
+
+    assert runtime.dev_reset(confirmed=True) == 0
+    assert [call[0] for call in runner.calls] == ["docker", "podman"]
+
+
+def test_dev_reset_fails_when_all_providers_fail(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("AEGISX_ENV=development\n", encoding="utf-8")
+    runner = FakeRunner(lambda _: (1, "", "failed"))
+    runtime = AegisXRuntime(tmp_path, env_file, runner=runner, providers=_providers())
+
+    assert runtime.dev_reset(confirmed=True) == 1
+    assert len(runner.calls) == 2
 
 
 def test_wait_for_readiness_stops_at_deadline() -> None:
