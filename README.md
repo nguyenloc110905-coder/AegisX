@@ -43,12 +43,17 @@ aegisx
 
 The install step is required once per checkout. After that, `aegisx` can be called from any directory. It starts PostgreSQL, applies Alembic migrations, starts the API, waits for readiness, and then runs the host agent. Press `Ctrl+C` to stop the API and agent. A PostgreSQL service that was already running is preserved.
 
+`aegisx run` opens the AegisX Operator Console directly in the terminal. Use number keys `1`–`5` to switch between Devices, Events, Detections, Candidates, and Incidents; press `r` to refresh and `q` to exit and stop launcher-owned processes. No browser is used.
+
 Useful commands:
 
 ```bash
 aegisx doctor
 aegisx stop
+aegisx run --no-ui
 ```
+
+`--no-ui` retains the log-oriented mode for headless development and troubleshooting.
 
 The launcher tries Docker Compose and then rootless Podman Compose. On Podman systems it can start the current user's `podman.socket`; it never escalates privileges or deletes the named database volume. Override provider selection when required:
 

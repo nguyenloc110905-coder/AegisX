@@ -13,6 +13,8 @@ Install the repository-local launcher once, then run the stack from any director
 aegisx
 ```
 
+The default and explicit `aegisx run` commands open the Textual Operator Console in the current terminal after the API becomes ready. Keys `1`–`5` select object tabs, `r` refreshes the bounded read-only PostgreSQL view, and `q` exits the console and stops launcher-owned API/agent processes. Use `aegisx run --no-ui` when raw API/agent logs are required.
+
 `aegisx` validates Compose, starts PostgreSQL, synchronizes the API and agent environments, applies Alembic migrations, starts FastAPI, waits for `/health/ready`, and then starts the host agent. It falls back from Docker to rootless Podman and starts `podman.socket` for the current user when required. It does not use root privileges or delete database volumes.
 
 ```bash

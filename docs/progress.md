@@ -341,3 +341,30 @@ Status: implemented and smoke-tested.
 ### Scope boundary
 
 This bundle does not change telemetry, Detection, CorrelationCandidate, Incident, or scoring semantics. Decision/Policy, response execution, UI, notifications, new detection packs, and production eBPF CO-RE deployment remain separate work.
+
+## Terminal Operator Console
+
+Status: implemented and smoke-tested.
+
+### Completed work
+
+- Recovered only the visual intent of the discarded Textual prototype; removed its Gemini/AI wording, nonexistent `Incident.decisions` dependency, fake incidents, and unsafe unbounded ORM access.
+- Added a read-only console repository that returns bounded immutable display records and counts for Devices, Events, Detections, CorrelationCandidates, and Incidents. Device token digests and raw Event payloads are not exposed.
+- Added a five-tab Textual console with number-key navigation, manual `r` refresh, bounded failure messages, and `q` exit.
+- `aegisx run` now starts API/agent quietly and runs the console in the foreground. `aegisx run --no-ui` preserves raw log mode. Console exit or interruption triggers the existing ownership-aware process cleanup.
+
+### Runtime smoke evidence
+
+- From `/tmp`, `aegisx run` selected rootless Podman after inaccessible Docker, opened `AegisX — Operator Console`, and loaded current PostgreSQL counts and Device rows.
+- Sending `q` returned exit code 0, removed launcher state, and left no API, agent, or console child process.
+
+### Verification
+
+- API suite against isolated PostgreSQL: `105 passed`; agent suite: `43 passed`; launcher suite: `41 passed`.
+- API, agent, and launcher Ruff format/check passed; strict mypy passed on 51, 16, and 7 source files respectively.
+- Console-focused repository and Textual pilot coverage passed 3 tests, including refresh and secret-safe failure output.
+- Compose validation, foundation validation, Alembic current/heads, and whitespace checks passed. The isolated console verification database was removed afterward.
+
+### Scope boundary
+
+This is a local terminal interface, not a web or desktop UI. Cross-machine signed/checksummed release packaging remains the next packaging stage. AI, Decision/Policy, response actions, notifications, and new Incident promotion behavior were not added.

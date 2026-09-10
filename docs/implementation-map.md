@@ -4,7 +4,7 @@ This document maps the source code through the verified Milestone 6A Incident Fo
 
 ## 1. Current status
 
-The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, deterministic detection/correlation foundations, the Milestone 6A Incident Foundation, and a one-command local developer launcher. Later detection packs, UI, notifications, and response actions have not started. AI Investigator has been removed from the roadmap.
+The repository has working foundations, an async FastAPI ingestion backend, PostgreSQL migrations, a Linux telemetry agent, deterministic detection/correlation foundations, the Milestone 6A Incident Foundation, a read-only terminal Operator Console, and a one-command local developer launcher. Later detection packs, web/desktop UI, notifications, and response actions have not started. AI Investigator has been removed from the roadmap.
 
 ### Implemented
 
@@ -167,7 +167,11 @@ AegisX/
 
 ### Developer launcher
 
-**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies, migrates to Alembic head, waits for API readiness, and supervises the host agent. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
+**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies, migrates to Alembic head, waits for API readiness, and supervises the host agent. The default `aegisx run` starts the Textual console in the foreground while API/agent output is suppressed; `--no-ui` retains raw log mode. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
+
+### Terminal Operator Console
+
+**Status: implemented.** `aegisx_api.console.repository` performs bounded read-only queries and maps accepted ORM models into immutable display records without token material or raw payloads. `aegisx_api.console.app` renders separate Devices, Events, Detections, CorrelationCandidates, and Incidents tabs. It does not contain AI, Decision/Policy, response execution, fake demo incidents, or Incident promotion behavior.
 
 ### Notification / UI
 
