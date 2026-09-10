@@ -184,7 +184,7 @@ git commit -m "fix(agent): make snapshot telemetry opt-in"
 - Strategy ID and correlation-key canonical input stay `PROCESS_LISTENER_ACTIVITY|device_id|pid|started_at`.
 - Historical `LISTENER_OBSERVED` rows are ignored but never mutated.
 
-- [ ] **Step 1: Replace rule tests first**
+- [x] **Step 1: Replace rule tests first**
 
 Write tests that independently assert:
 
@@ -205,17 +205,17 @@ assert ListenerOpenedRule.score_contribution == 5
 
 Also assert malformed/irrelevant input returns `None`, Python development wording contains neither `malware` nor `suspicious`, and `create_default_engine().evaluate(listener_observed_event) == ()`.
 
-- [ ] **Step 2: Run detection tests and confirm RED**
+- [x] **Step 2: Run detection tests and confirm RED**
 
 Run: `uv run --project apps/api pytest apps/api/tests/detection -q`
 
 Expected: `ListenerOpenedRule` cannot be imported and observed evidence still matches the default engine.
 
-- [ ] **Step 3: Implement and register `ListenerOpenedRule`**
+- [x] **Step 3: Implement and register `ListenerOpenedRule`**
 
 Use the existing validation shape but support only `network.listener_opened`. Replace imports and default registry construction, then remove the unused observed-rule module.
 
-- [ ] **Step 4: Convert correlation fixtures and expectations**
+- [x] **Step 4: Convert correlation fixtures and expectations**
 
 Change listener fixtures to:
 
@@ -226,17 +226,17 @@ event_type="network.listener_opened"
 
 Add a rejection test containing a `LISTENER_OBSERVED` Detection. Keep the known SHA-256 key literal unchanged to prove backward-compatible idempotency.
 
-- [ ] **Step 5: Run correlation tests and confirm RED**
+- [x] **Step 5: Run correlation tests and confirm RED**
 
 Run: `uv run --project apps/api pytest apps/api/tests/correlation -q`
 
 Expected: the current strategy still selects `LISTENER_OBSERVED` and rejects the new fixture.
 
-- [ ] **Step 6: Switch correlation selection to opened evidence**
+- [x] **Step 6: Switch correlation selection to opened evidence**
 
 Change `required_rule_ids`, listener extraction guard, `_RELEVANT_RULE_IDS`, `_evidence_for_anchor`, and neutral reason text. Do not change eligibility, confidence, score aggregation, Candidate key, savepoint, or persistence logic.
 
-- [ ] **Step 7: Add PostgreSQL ingestion coverage**
+- [x] **Step 7: Add PostgreSQL ingestion coverage**
 
 Create a registered Device, ingest a process-start Event and listener-opened Event with the same PID inside the configured window, and assert:
 
@@ -250,7 +250,7 @@ assert set(candidate_detection_rule_ids) == {"PROCESS_STARTED", "LISTENER_OPENED
 
 Retry the same Event UUIDs and assert Detection/Candidate counts do not increase. Ingest `network.listener_observed` separately and assert it persists only as an Event.
 
-- [ ] **Step 8: Verify and commit Task 2**
+- [x] **Step 8: Verify and commit Task 2**
 
 Run:
 

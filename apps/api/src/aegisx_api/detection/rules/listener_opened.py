@@ -2,14 +2,14 @@ from aegisx_api.detection.types import DetectionSeverity, RuleMatch
 from aegisx_api.models.event import Event
 
 
-class ListenerObservedRule:
-    rule_id = "LISTENER_OBSERVED"
-    name = "Listener observed"
-    description = "Records snapshot evidence of a listening socket without claiming a transition."
+class ListenerOpenedRule:
+    rule_id = "LISTENER_OPENED"
+    name = "Listener opened"
+    description = "Records a listener endpoint that appeared between complete snapshots."
     category = "network"
     severity: DetectionSeverity = "low"
     score_contribution = 5
-    event_types = frozenset({"network.listener_observed"})
+    event_types = frozenset({"network.listener_opened"})
 
     def evaluate(self, event: Event) -> RuleMatch | None:
         if event.event_type not in self.event_types:
@@ -28,6 +28,9 @@ class ListenerObservedRule:
             return None
         pid_suffix = "" if pid is None else f" (PID {pid})"
         return RuleMatch(
-            reason=f"{protocol.upper()} listener observed at {local_ip}:{local_port}{pid_suffix}.",
+            reason=(
+                f"{protocol.upper()} listener appeared at {local_ip}:{local_port}{pid_suffix} "
+                "between complete snapshots."
+            ),
             evidence_event_ids=(event.id,),
         )

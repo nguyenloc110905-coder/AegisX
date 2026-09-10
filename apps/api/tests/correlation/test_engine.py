@@ -47,7 +47,7 @@ def result(strategy_id: str = "FIRST") -> CorrelationResult:
 
 
 def test_registry_indexes_strategies_by_required_rule_id_and_rejects_duplicates() -> None:
-    first = FakeStrategy("FIRST", frozenset({"PROCESS_STARTED", "LISTENER_OBSERVED"}))
+    first = FakeStrategy("FIRST", frozenset({"PROCESS_STARTED", "LISTENER_OPENED"}))
     second = FakeStrategy("SECOND", frozenset({"OTHER"}))
     registry = CorrelationRegistry([first, second])
 
@@ -81,7 +81,7 @@ def test_engine_returns_no_result_when_new_detections_do_not_match_a_strategy() 
 
 def test_engine_deduplicates_results_by_stable_correlation_key() -> None:
     first = FakeStrategy("FIRST", frozenset({"PROCESS_STARTED"}), result())
-    second = FakeStrategy("SECOND", frozenset({"LISTENER_OBSERVED"}), result("SECOND"))
+    second = FakeStrategy("SECOND", frozenset({"LISTENER_OPENED"}), result("SECOND"))
     engine = CorrelationEngine(CorrelationRegistry([first, second]))
 
     results = engine.evaluate(
@@ -93,7 +93,7 @@ def test_engine_deduplicates_results_by_stable_correlation_key() -> None:
     assert results == (result(),)
 
 
-def test_engine_collapses_repeated_listener_snapshots_for_one_process_identity() -> None:
+def test_engine_collapses_repeated_listener_transitions_for_one_process_identity() -> None:
     first_listener = listener_detection()
     repeated_listener = listener_detection(
         timestamp=LISTENER_TIMESTAMP + timedelta(seconds=10),

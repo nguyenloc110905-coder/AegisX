@@ -77,12 +77,12 @@ def process_started_event(
     }
 
 
-def listener_observed_event(event_id: str, *, timestamp: datetime) -> dict:
+def listener_opened_event(event_id: str, *, timestamp: datetime) -> dict:
     return {
         "id": event_id,
         "schema_version": 1,
         "timestamp": timestamp.isoformat(),
-        "event_type": "network.listener_observed",
+        "event_type": "network.listener_opened",
         "source": "network_collector",
         "severity_hint": "normal",
         "data": {
@@ -243,8 +243,10 @@ async def test_ingestion_accepts_typed_network_listener(app_and_client) -> None:
     assert response.status_code == 202
     async with app.state.session_factory() as session:
         stored = await session.scalar(select(Event).where(Event.id == UUID(event_id)))
+        detection_count = await session.scalar(select(func.count()).select_from(Detection))
     assert stored is not None
     assert stored.local_port == 8080
+    assert detection_count == 0
 
 
 @pytest.mark.asyncio
@@ -286,7 +288,7 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("event_type", "data"),
+    ("event_type", "data", "expected_detection_count"),
     [
         (
             "network.listener_opened",
@@ -297,6 +299,7 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
                 "protocol": "tcp",
                 "state": "LISTEN",
             },
+            1,
         ),
         (
             "network.listener_closed",
@@ -307,6 +310,7 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
                 "protocol": "udp",
                 "state": "NONE",
             },
+            0,
         ),
         (
             "network.connection_opened",
@@ -319,6 +323,7 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
                 "protocol": "tcp",
                 "state": "ESTABLISHED",
             },
+            0,
         ),
         (
             "network.connection_closed",
@@ -331,6 +336,7 @@ async def test_ingestion_accepts_typed_process_exit_without_detection(app_and_cl
                 "protocol": "tcp",
                 "state": "ESTABLISHED",
             },
+            0,
         ),
     ],
 )
@@ -338,6 +344,7 @@ async def test_ingestion_accepts_typed_network_transition(
     app_and_client,
     event_type: str,
     data: dict,
+    expected_detection_count: int,
 ) -> None:
     app, client = app_and_client
     token = await register(client)
@@ -368,7 +375,7 @@ async def test_ingestion_accepts_typed_network_transition(
         detection_count = await session.scalar(select(func.count()).select_from(Detection))
     assert stored is not None
     assert stored.event_type == event_type
-    assert detection_count == 0
+    assert detection_count == expected_detection_count
 
 
 @pytest.mark.asyncio
@@ -393,7 +400,7 @@ async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
         ]
     }
     listener_request = {
-        "events": [listener_observed_event(str(listener_event_id), timestamp=listener_timestamp)]
+        "events": [listener_opened_event(str(listener_event_id), timestamp=listener_timestamp)]
     }
 
     process_response = await client.post(
@@ -425,7 +432,7 @@ async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
         assert candidate.confidence == "low"
         assert candidate.aggregate_score == 5
         assert candidate.reason == (
-            "A listener snapshot was associated with the recently started process identity."
+            "A listener-open transition was associated with the recently started process identity."
         )
         assert candidate.start_timestamp == process_timestamp.replace(tzinfo=None)
         assert candidate.end_timestamp == listener_timestamp.replace(tzinfo=None)
@@ -440,7 +447,7 @@ async def test_ingestion_persists_one_immutable_candidate_for_repeated_evidence(
         headers=headers,
         json={
             "events": [
-                listener_observed_event(
+                listener_opened_event(
                     str(repeated_listener_event_id),
                     timestamp=listener_timestamp + timedelta(minutes=1),
                 )
@@ -502,8 +509,8 @@ async def test_new_detection_cannot_persist_a_historical_only_correlation(
             timestamp=process_b_timestamp,
             started_at=process_b_timestamp,
         ),
-        listener_observed_event(str(listener_one_event_id), timestamp=listener_one_timestamp),
-        listener_observed_event(str(listener_two_event_id), timestamp=listener_two_timestamp),
+        listener_opened_event(str(listener_one_event_id), timestamp=listener_one_timestamp),
+        listener_opened_event(str(listener_two_event_id), timestamp=listener_two_timestamp),
     )
 
     for index, event in enumerate(events):
@@ -558,9 +565,7 @@ async def test_correlation_failure_preserves_authoritative_event_and_detection_r
             json={
                 "events": [
                     process_started_event(str(uuid4()), timestamp=timestamp, started_at=timestamp),
-                    listener_observed_event(
-                        str(uuid4()), timestamp=timestamp + timedelta(minutes=1)
-                    ),
+                    listener_opened_event(str(uuid4()), timestamp=timestamp + timedelta(minutes=1)),
                 ]
             },
         )
@@ -606,7 +611,7 @@ async def test_correlation_success_logs_bounded_outcome_after_commit(
     events = [process_started_event(str(uuid4()), timestamp=timestamp, started_at=timestamp)]
     if include_listener:
         events.append(
-            listener_observed_event(str(uuid4()), timestamp=timestamp + timedelta(minutes=1))
+            listener_opened_event(str(uuid4()), timestamp=timestamp + timedelta(minutes=1))
         )
 
     with capture_logs() as logs:

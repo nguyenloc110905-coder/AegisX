@@ -53,9 +53,9 @@ def listener_detection(
     score_contribution: int = 5,
 ):
     return detection(
-        rule_id="LISTENER_OBSERVED",
+        rule_id="LISTENER_OPENED",
         source_event=event(
-            event_type="network.listener_observed",
+            event_type="network.listener_opened",
             device_id=device_id,
             event_id=event_id,
             timestamp=timestamp,
@@ -126,6 +126,23 @@ def test_returns_no_result_for_different_device_or_pid() -> None:
         == ()
     )
     assert strategy.evaluate((process_detection(), listener_detection(pid=4040)), WINDOW) == ()
+
+
+def test_returns_no_result_for_listener_snapshot_without_transition_evidence() -> None:
+    observed = detection(
+        rule_id="LISTENER_OBSERVED",
+        source_event=event(
+            event_type="network.listener_observed",
+            device_id=DEVICE_ID,
+            event_id=LISTENER_EVENT_ID,
+            timestamp=LISTENER_TIMESTAMP,
+            data={"pid": 4242},
+        ),
+        score_contribution=5,
+        detection_id=LISTENER_DETECTION_ID,
+    )
+
+    assert ProcessListenerActivityStrategy().evaluate((process_detection(), observed), WINDOW) == ()
 
 
 def test_returns_no_result_when_listener_precedes_process() -> None:

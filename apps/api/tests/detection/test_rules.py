@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from aegisx_api.detection.rules.listener_observed import ListenerObservedRule
+from aegisx_api.detection.defaults import create_default_engine
+from aegisx_api.detection.rules.listener_opened import ListenerOpenedRule
 from aegisx_api.detection.rules.process_started import ProcessStartedRule
 from aegisx_api.models.event import Event
 
@@ -39,33 +40,42 @@ def test_process_started_rule_ignores_irrelevant_or_malformed_event() -> None:
     assert rule.evaluate(event("process.started", {"pid": "bad", "name": "python"})) is None
 
 
-def test_listener_observed_rule_matches_snapshot_without_transition_claim() -> None:
+def test_listener_opened_rule_matches_proved_transition() -> None:
+    source = event(
+        "network.listener_opened",
+        {"protocol": "tcp", "local_ip": "127.0.0.1", "local_port": 8000, "pid": 42},
+    )
+
+    match = ListenerOpenedRule().evaluate(source)
+
+    assert match is not None
+    assert match.reason == (
+        "TCP listener appeared at 127.0.0.1:8000 (PID 42) between complete snapshots."
+    )
+    assert match.evidence_event_ids == (source.id,)
+    assert ListenerOpenedRule.severity == "low"
+    assert ListenerOpenedRule.score_contribution == 5
+
+
+def test_listener_opened_rule_ignores_irrelevant_or_malformed_event() -> None:
+    rule = ListenerOpenedRule()
+
+    assert rule.evaluate(event("network.connection_observed", {})) is None
+    assert rule.evaluate(event("network.listener_opened", {"local_port": "bad"})) is None
+
+
+def test_default_engine_does_not_detect_listener_snapshot() -> None:
     source = event(
         "network.listener_observed",
         {"protocol": "tcp", "local_ip": "127.0.0.1", "local_port": 8000, "pid": 42},
     )
 
-    match = ListenerObservedRule().evaluate(source)
-
-    assert match is not None
-    assert match.reason == "TCP listener observed at 127.0.0.1:8000 (PID 42)."
-    assert match.evidence_event_ids == (source.id,)
-    assert ListenerObservedRule.severity == "low"
-    assert ListenerObservedRule.score_contribution == 5
-    assert "new" not in match.reason.lower()
-    assert "opened" not in match.reason.lower()
+    assert create_default_engine().evaluate(source) == []
 
 
-def test_listener_observed_rule_ignores_irrelevant_or_malformed_event() -> None:
-    rule = ListenerObservedRule()
-
-    assert rule.evaluate(event("network.connection_observed", {})) is None
-    assert rule.evaluate(event("network.listener_observed", {"local_port": "bad"})) is None
-
-
-def test_python_development_listener_is_only_a_low_risk_observation() -> None:
+def test_python_development_listener_open_is_only_a_low_risk_transition() -> None:
     source = event(
-        "network.listener_observed",
+        "network.listener_opened",
         {
             "protocol": "tcp",
             "local_ip": "127.0.0.1",
@@ -75,10 +85,10 @@ def test_python_development_listener_is_only_a_low_risk_observation() -> None:
         },
     )
 
-    match = ListenerObservedRule().evaluate(source)
+    match = ListenerOpenedRule().evaluate(source)
 
     assert match is not None
-    assert ListenerObservedRule.severity == "low"
-    assert ListenerObservedRule.score_contribution == 5
+    assert ListenerOpenedRule.severity == "low"
+    assert ListenerOpenedRule.score_contribution == 5
     assert "malware" not in match.reason.lower()
     assert "suspicious" not in match.reason.lower()

@@ -30,6 +30,7 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
     external_id = f"postgres-integration-{uuid4()}"
     process_event_id = uuid4()
     listener_event_id = uuid4()
+    observed_listener_event_id = uuid4()
     repeated_listener_event_id = uuid4()
     process_timestamp = datetime.now(UTC).replace(microsecond=0)
     listener_timestamp = process_timestamp + timedelta(seconds=1)
@@ -86,7 +87,7 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
                             "id": str(listener_event_id),
                             "schema_version": 1,
                             "timestamp": listener_timestamp.isoformat(),
-                            "event_type": "network.listener_observed",
+                            "event_type": "network.listener_opened",
                             "source": "integration_test",
                             "severity_hint": "normal",
                             "data": {
@@ -106,13 +107,78 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
             assert listener_ingestion.status_code == 202
             assert listener_ingestion.json() == {"accepted": 1, "duplicates": 0}
 
+            duplicate_listener_ingestion = await client.post(
+                "/api/v1/telemetry/events",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "events": [
+                        {
+                            "id": str(listener_event_id),
+                            "schema_version": 1,
+                            "timestamp": listener_timestamp.isoformat(),
+                            "event_type": "network.listener_opened",
+                            "source": "integration_test",
+                            "severity_hint": "normal",
+                            "data": {
+                                "pid": 4242,
+                                "local_ip": "127.0.0.1",
+                                "local_port": 8080,
+                                "protocol": "tcp",
+                                "state": "LISTEN",
+                            },
+                            "metadata": {},
+                        }
+                    ]
+                },
+            )
+            assert duplicate_listener_ingestion.status_code == 202
+            assert duplicate_listener_ingestion.json() == {"accepted": 0, "duplicates": 1}
+
+            observed_listener_ingestion = await client.post(
+                "/api/v1/telemetry/events",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "events": [
+                        {
+                            "id": str(observed_listener_event_id),
+                            "schema_version": 1,
+                            "timestamp": listener_timestamp.isoformat(),
+                            "event_type": "network.listener_observed",
+                            "source": "integration_test",
+                            "severity_hint": "normal",
+                            "data": {
+                                "pid": 4242,
+                                "local_ip": "127.0.0.1",
+                                "local_port": 9000,
+                                "protocol": "tcp",
+                                "state": "LISTEN",
+                            },
+                            "metadata": {},
+                        }
+                    ]
+                },
+            )
+            assert observed_listener_ingestion.status_code == 202
+            assert observed_listener_ingestion.json() == {"accepted": 1, "duplicates": 0}
+
         async with app.state.session_factory() as session:
             listener_event = await session.scalar(
                 select(Event).where(Event.id == listener_event_id)
             )
             assert listener_event is not None
             assert listener_event.local_port == 8080
-            assert listener_event.event_type == "network.listener_observed"
+            assert listener_event.event_type == "network.listener_opened"
+            observed_listener_event = await session.get(Event, observed_listener_event_id)
+            assert observed_listener_event is not None
+            assert observed_listener_event.event_type == "network.listener_observed"
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Detection)
+                    .where(Detection.source_event_id == observed_listener_event_id)
+                )
+                == 0
+            )
 
             detections = (
                 await session.scalars(
@@ -123,10 +189,10 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
             ).all()
             assert {detection.rule_id for detection in detections} == {
                 "PROCESS_STARTED",
-                "LISTENER_OBSERVED",
+                "LISTENER_OPENED",
             }
             listener_detection = next(
-                detection for detection in detections if detection.rule_id == "LISTENER_OBSERVED"
+                detection for detection in detections if detection.rule_id == "LISTENER_OPENED"
             )
             assert listener_detection.severity == "low"
             assert listener_detection.score_contribution == 5
@@ -151,7 +217,8 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
             assert candidate.confidence == "low"
             assert candidate.aggregate_score == 5
             assert candidate.reason == (
-                "A listener snapshot was associated with the recently started process identity."
+                "A listener-open transition was associated with the recently "
+                "started process identity."
             )
             assert len(candidate.correlation_key) == 64
             initial_candidate_id = candidate.id
@@ -194,7 +261,7 @@ async def test_device_registration_and_event_ingestion_on_postgresql() -> None:
                             "id": str(repeated_listener_event_id),
                             "schema_version": 1,
                             "timestamp": (listener_timestamp + timedelta(seconds=1)).isoformat(),
-                            "event_type": "network.listener_observed",
+                            "event_type": "network.listener_opened",
                             "source": "integration_test",
                             "severity_hint": "normal",
                             "data": {

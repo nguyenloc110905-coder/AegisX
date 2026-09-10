@@ -30,9 +30,9 @@ class _ListenerEvidence:
 
 class ProcessListenerActivityStrategy:
     strategy_id = "PROCESS_LISTENER_ACTIVITY"
-    name = "Process activity with observed listener"
-    description = "Associates a listener snapshot with a recently started process identity."
-    required_rule_ids = frozenset({"PROCESS_STARTED", "LISTENER_OBSERVED"})
+    name = "Process activity with opened listener"
+    description = "Associates a proved listener transition with a recent process identity."
+    required_rule_ids = frozenset({"PROCESS_STARTED", "LISTENER_OPENED"})
 
     def evaluate(
         self, evidence: Sequence[Detection], window: timedelta
@@ -82,7 +82,7 @@ class ProcessListenerActivityStrategy:
         return _ProcessEvidence(detection=detection, event=event, pid=pid, started_at=started_at)
 
     def _listener_evidence(self, detection: Detection) -> _ListenerEvidence | None:
-        if detection.rule_id != "LISTENER_OBSERVED":
+        if detection.rule_id != "LISTENER_OPENED":
             return None
         event = detection.source_event
         pid = self._positive_pid(event.data.get("pid"))

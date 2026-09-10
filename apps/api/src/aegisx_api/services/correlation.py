@@ -12,9 +12,9 @@ from aegisx_api.correlation.types import CorrelationResult
 from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
 
-_RELEVANT_RULE_IDS = ("PROCESS_STARTED", "LISTENER_OBSERVED")
+_RELEVANT_RULE_IDS = ("PROCESS_STARTED", "LISTENER_OPENED")
 _PROCESS_LISTENER_REASON = (
-    "A listener snapshot was associated with the recently started process identity."
+    "A listener-open transition was associated with the recently started process identity."
 )
 
 
@@ -115,7 +115,7 @@ class CorrelationService:
     def _evidence_for_anchor(
         anchor: Detection, evidence: Sequence[Detection]
     ) -> tuple[Detection, ...]:
-        if anchor.rule_id != "LISTENER_OBSERVED":
+        if anchor.rule_id != "LISTENER_OPENED":
             return tuple(evidence)
         return tuple(
             detection
