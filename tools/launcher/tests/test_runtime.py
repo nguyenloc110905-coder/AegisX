@@ -58,9 +58,11 @@ class FakeProcessFactory:
     def __init__(self, processes: list[FakeProcess]) -> None:
         self.processes = iter(processes)
         self.calls: list[tuple[str, ...]] = []
+        self.quiet_calls: list[bool] = []
 
-    def __call__(self, argv: tuple[str, ...], *, cwd: Path) -> FakeProcess:
+    def __call__(self, argv: tuple[str, ...], *, cwd: Path, quiet: bool = False) -> FakeProcess:
         self.calls.append(argv)
+        self.quiet_calls.append(quiet)
         return next(self.processes)
 
 
@@ -94,7 +96,7 @@ def test_runtime_falls_back_provider_and_starts_agent_only_after_readiness(tmp_p
         sleep=lambda _: None,
     )
 
-    assert runtime.run() == 9
+    assert runtime.run(show_ui=False) == 9
     assert any(call[:2] == ("docker", "compose") and "up" in call for call in runner.calls)
     assert any(call[:2] == ("podman", "compose") and "up" in call for call in runner.calls)
     assert runner.calls.index(("uv", "sync", "--project", "apps/api", "--all-groups")) < len(
@@ -138,6 +140,36 @@ def test_readiness_failure_prevents_agent_start_and_cleans_up(tmp_path: Path) ->
     assert any("stop" in call and "postgres" in call for call in runner.calls)
 
 
+def test_runtime_runs_console_in_foreground_and_cleans_up_background_children(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(lambda _: (0, "", ""))
+    api = FakeProcess([None, None])
+    agent = FakeProcess([None, None])
+    console = FakeProcess([None, 0])
+    processes = FakeProcessFactory([api, agent, console])
+    runtime = AegisXRuntime(
+        tmp_path,
+        tmp_path / ".env",
+        runner=runner,
+        providers=(ComposeProvider(("podman", "compose")),),
+        process_factory=processes,
+        readiness_waiter=lambda _url, _timeout: True,
+        sleep=lambda _: None,
+    )
+
+    assert runtime.run() == 0
+    assert processes.calls[-1] == (
+        "uv",
+        "run",
+        "--project",
+        "apps/api",
+        "aegisx-console",
+    )
+    assert processes.quiet_calls == [True, True, False]
+    assert api.terminated and agent.terminated
+
+
 def test_podman_runtime_starts_user_socket_once_then_retries(tmp_path: Path) -> None:
     socket_started = False
 
@@ -163,7 +195,7 @@ def test_podman_runtime_starts_user_socket_once_then_retries(tmp_path: Path) -> 
         sleep=lambda _: None,
     )
 
-    assert runtime.run() == 4
+    assert runtime.run(show_ui=False) == 4
     assert ("systemctl", "--user", "start", "podman.socket") in runner.calls
     podman_up_calls = [
         call for call in runner.calls if call[:2] == ("podman", "compose") and "up" in call
@@ -190,7 +222,7 @@ def test_existing_postgres_is_not_stopped_when_child_fails(tmp_path: Path) -> No
         sleep=lambda _: None,
     )
 
-    assert runtime.run() == 3
+    assert runtime.run(show_ui=False) == 3
     assert not any("stop" in call and "postgres" in call for call in runner.calls)
     assert agent.terminated
 
@@ -213,7 +245,7 @@ def test_keyboard_interrupt_stops_children_and_started_postgres(tmp_path: Path) 
         sleep=interrupt,
     )
 
-    assert runtime.run() == 130
+    assert runtime.run(show_ui=False) == 130
     assert api.terminated and agent.terminated
     assert any("stop" in call and "postgres" in call for call in runner.calls)
 

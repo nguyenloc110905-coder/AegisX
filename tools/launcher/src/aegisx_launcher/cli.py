@@ -13,6 +13,11 @@ def _parser() -> argparse.ArgumentParser:
         description="Run the local AegisX development stack.",
     )
     parser.add_argument("command", nargs="?", choices=("run", "doctor", "stop"), default="run")
+    parser.add_argument(
+        "--no-ui",
+        action="store_true",
+        help="run API and agent logs without the terminal operator console",
+    )
     return parser
 
 
@@ -32,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return runtime.stop()
     try:
         with LauncherState.default():
-            return runtime.run()
+            return runtime.run(show_ui=not arguments.no_ui)
     except LauncherStateError as error:
         print(f"[failed] {error}", file=sys.stderr)
         return 3

@@ -58,8 +58,15 @@ def wait_for_readiness(
     return False
 
 
-def _spawn_process(argv: tuple[str, ...], *, cwd: Path) -> Process:
-    return subprocess.Popen(argv, cwd=cwd, start_new_session=True)  # noqa: S603
+def _spawn_process(argv: tuple[str, ...], *, cwd: Path, quiet: bool = False) -> Process:
+    output = subprocess.DEVNULL if quiet else None
+    return subprocess.Popen(  # noqa: S603
+        argv,
+        cwd=cwd,
+        start_new_session=True,
+        stdout=output,
+        stderr=output,
+    )
 
 
 class AegisXRuntime:
@@ -113,7 +120,7 @@ class AegisXRuntime:
         print("[failed] could not stop PostgreSQL with any Compose provider")
         return 1
 
-    def run(self) -> int:
+    def run(self, *, show_ui: bool = True) -> int:
         if not self._runner.executable_exists("uv"):
             print("[failed] uv is required; install it from https://docs.astral.sh/uv/")
             return 1
@@ -172,6 +179,7 @@ class AegisXRuntime:
 
         api_process: Process | None = None
         agent_process: Process | None = None
+        console_process: Process | None = None
         try:
             setup_commands = (
                 ("uv", "sync", "--project", "apps/api", "--all-groups"),
@@ -206,14 +214,28 @@ class AegisXRuntime:
                 "--port",
                 "8000",
             )
-            api_process = self._process_factory(api_argv, cwd=self._root)
+            api_process = self._process_factory(api_argv, cwd=self._root, quiet=show_ui)
             if not self._readiness_waiter(API_READY_URL, 30):
                 print("[failed] API readiness timed out after 30 seconds")
                 return 1
 
             agent_argv = ("uv", "run", "--project", "apps/agent", "aegisx-agent", "run")
-            agent_process = self._process_factory(agent_argv, cwd=self._root)
-            print("[ok] AegisX is running; press Ctrl+C to stop")
+            agent_process = self._process_factory(agent_argv, cwd=self._root, quiet=show_ui)
+            if show_ui:
+                console_argv = (
+                    "uv",
+                    "run",
+                    "--project",
+                    "apps/api",
+                    "aegisx-console",
+                )
+                console_process = self._process_factory(
+                    console_argv,
+                    cwd=self._root,
+                    quiet=False,
+                )
+            else:
+                print("[ok] AegisX is running; press Ctrl+C to stop")
 
             while True:
                 api_code = api_process.poll()
@@ -222,10 +244,15 @@ class AegisXRuntime:
                 agent_code = agent_process.poll()
                 if agent_code is not None:
                     return agent_code
+                if console_process is not None:
+                    console_code = console_process.poll()
+                    if console_code is not None:
+                        return console_code
                 self._sleep(0.25)
         except KeyboardInterrupt:
             return 130
         finally:
+            self._terminate(console_process)
             self._terminate(agent_process)
             self._terminate(api_process)
             if postgres_started_here:

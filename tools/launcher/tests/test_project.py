@@ -111,7 +111,7 @@ def test_cli_dispatches_to_runtime(
             assert root == project
             assert selected_env == env_file
 
-        def run(self) -> int:
+        def run(self, *, show_ui: bool = True) -> int:
             called.append("run")
             return 7
 
@@ -166,8 +166,8 @@ def test_run_command_holds_single_instance_state_while_runtime_runs(
         def __init__(self, _root: Path, _env: Path) -> None:
             pass
 
-        def run(self) -> int:
-            events.append("runtime-run")
+        def run(self, *, show_ui: bool = True) -> int:
+            events.append(f"runtime-run:{show_ui}")
             return 0
 
     monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
@@ -175,7 +175,27 @@ def test_run_command_holds_single_instance_state_while_runtime_runs(
     monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
 
     assert main([]) == 0
-    assert events == ["state-enter", "runtime-run", "state-exit"]
+    assert events == ["state-enter", "runtime-run:True", "state-exit"]
+
+
+def test_run_no_ui_dispatches_log_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    selected: list[bool] = []
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def run(self, *, show_ui: bool = True) -> int:
+            selected.append(show_ui)
+            return 0
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+
+    assert main(["run", "--no-ui"]) == 0
+    assert selected == [False]
 
 
 def test_duplicate_launcher_is_reported_without_starting_runtime(
