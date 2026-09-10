@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     api_title: str = "AegisX API"
     api_version: str = "0.1.0"
     telemetry_batch_limit: int = Field(default=100, ge=1, le=1000)
+    device_stale_after_seconds: int = Field(
+        default=90,
+        ge=5,
+        le=86400,
+        validation_alias="AEGISX_DEVICE_STALE_AFTER_SECONDS",
+    )
     correlation_window_seconds: int = Field(default=300, ge=1, le=86400)
     incident_evidence_window_seconds: int = Field(default=3600, ge=1, le=86400)
     incident_advisory_lock_timeout_ms: int = Field(

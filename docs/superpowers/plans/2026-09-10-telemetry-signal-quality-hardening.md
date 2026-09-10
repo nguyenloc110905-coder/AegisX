@@ -292,17 +292,17 @@ git commit -m "fix(detection): evaluate proved listener transitions"
 - `DeviceRow` carries `enrollment: Literal["enabled", "disabled"]` and `telemetry_status: TelemetryStatus` instead of exposing `is_active` as “Active”.
 - `ConsoleRepository(..., stale_after: timedelta, now: Callable[[], datetime])` derives display state without database writes.
 
-- [ ] **Step 1: Add failing configuration boundary tests**
+- [x] **Step 1: Add failing configuration boundary tests**
 
 Assert default 90, accepted values 5 and 86,400, and rejection at 4 and 86,401. Add `AEGISX_DEVICE_STALE_AFTER_SECONDS=120` to the environment override test.
 
-- [ ] **Step 2: Run config tests and confirm RED**
+- [x] **Step 2: Run config tests and confirm RED**
 
 Run: `uv run --project apps/api pytest apps/api/tests/test_config.py -q`
 
 Expected: the new setting is absent.
 
-- [ ] **Step 3: Add the bounded API/console setting**
+- [x] **Step 3: Add the bounded API/console setting**
 
 ```python
 device_stale_after_seconds: int = Field(default=90, ge=5, le=86400)
@@ -310,17 +310,17 @@ device_stale_after_seconds: int = Field(default=90, ge=5, le=86400)
 
 Add `AEGISX_DEVICE_STALE_AFTER_SECONDS=90` to `.env.example`.
 
-- [ ] **Step 4: Add failing repository status tests**
+- [x] **Step 4: Add failing repository status tests**
 
 Use a fixed UTC instant. Insert four Devices: enabled at the exact 90-second boundary, enabled one microsecond older, enabled with no timestamp, and disabled with a recent timestamp. Assert statuses `recent`, `stale`, `never`, and `disabled`, and enrollment labels `enabled`, `enabled`, `enabled`, `disabled`.
 
-- [ ] **Step 5: Run repository tests and confirm RED**
+- [x] **Step 5: Run repository tests and confirm RED**
 
 Run: `uv run --project apps/api pytest apps/api/tests/console/test_repository.py -q`
 
 Expected: `DeviceRow` and `ConsoleRepository` do not yet expose derived status.
 
-- [ ] **Step 6: Implement pure recency derivation**
+- [x] **Step 6: Implement pure recency derivation**
 
 Normalize naive SQLite test timestamps to UTC only for comparison. Derive:
 
@@ -337,7 +337,7 @@ else:
 
 Pass `timedelta(seconds=settings.device_stale_after_seconds)` from console `main.py`.
 
-- [ ] **Step 7: Add failing Textual assertions**
+- [x] **Step 7: Add failing Textual assertions**
 
 Assert the Device table columns include `Enrollment`, `Telemetry`, and `Last seen`, and do not include `Active`. Assert a persistent widget contains exactly:
 
@@ -347,11 +347,11 @@ Polling telemetry only; AegisX does not prevent attacks and may miss activity be
 
 Assert the connected status says `rule matches are not automatic alerts`.
 
-- [ ] **Step 8: Implement console wording/layout**
+- [x] **Step 8: Implement console wording/layout**
 
 Add a two-line persistent coverage panel, render enrollment/telemetry values, and keep database error output secret-safe. Do not add raw payload or command-line drill-down.
 
-- [ ] **Step 9: Verify and commit Task 3**
+- [x] **Step 9: Verify and commit Task 3**
 
 Run:
 

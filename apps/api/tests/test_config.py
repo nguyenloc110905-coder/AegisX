@@ -4,11 +4,13 @@ from aegisx_api.config import Settings
 def test_settings_read_aegisx_prefixed_environment(monkeypatch) -> None:
     monkeypatch.setenv("AEGISX_LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("AEGISX_DATABASE_URL", "sqlite+aiosqlite:///test.db")
+    monkeypatch.setenv("AEGISX_DEVICE_STALE_AFTER_SECONDS", "120")
 
     settings = Settings(_env_file=None)
 
     assert settings.log_level == "DEBUG"
     assert settings.database_url == "sqlite+aiosqlite:///test.db"
+    assert settings.device_stale_after_seconds == 120
 
 
 def test_settings_reject_unknown_environment_name() -> None:
@@ -35,3 +37,20 @@ def test_settings_configures_bounded_correlation_window() -> None:
             assert "correlation_window_seconds" in str(error)
         else:
             raise AssertionError("invalid correlation window must be rejected")
+
+
+def test_settings_configures_bounded_device_stale_threshold() -> None:
+    assert Settings(_env_file=None).device_stale_after_seconds == 90
+    assert Settings(_env_file=None, device_stale_after_seconds=5).device_stale_after_seconds == 5
+    assert (
+        Settings(_env_file=None, device_stale_after_seconds=86400).device_stale_after_seconds
+        == 86400
+    )
+
+    for invalid_threshold in (4, 86401):
+        try:
+            Settings(_env_file=None, device_stale_after_seconds=invalid_threshold)
+        except ValueError as error:
+            assert "device_stale_after_seconds" in str(error)
+        else:
+            raise AssertionError("invalid device stale threshold must be rejected")

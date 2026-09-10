@@ -20,7 +20,17 @@ def snapshot() -> DashboardSnapshot:
     return DashboardSnapshot(
         counts=DashboardCounts(1, 1, 1, 1, 1),
         devices=(
-            DeviceRow(uuid4(), "workstation", "Linux", "Fedora", "6.12", "x86_64", True, now),
+            DeviceRow(
+                uuid4(),
+                "workstation",
+                "Linux",
+                "Fedora",
+                "6.12",
+                "x86_64",
+                "enabled",
+                "recent",
+                now,
+            ),
         ),
         events=(
             EventRow(
@@ -69,6 +79,18 @@ async def test_console_mounts_and_populates_all_real_object_tables() -> None:
         assert app.query_one("#tbl-detections").row_count == 1
         assert app.query_one("#tbl-candidates").row_count == 1
         assert app.query_one("#tbl-incidents").row_count == 1
+        device_columns = [
+            str(column.label) for column in app.query_one("#tbl-devices").columns.values()
+        ]
+        assert "Enrollment" in device_columns
+        assert "Telemetry" in device_columns
+        assert "Last seen" in device_columns
+        assert "Active" not in device_columns
+        assert str(app.query_one("#coverage-panel").render()) == (
+            "Polling telemetry only; AegisX does not prevent attacks and may miss activity "
+            "between snapshots."
+        )
+        assert "rule matches are not automatic alerts" in str(app.query_one("#log-panel").render())
         await pilot.press("r")
         await pilot.pause()
 

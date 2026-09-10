@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -117,4 +117,52 @@ async def test_repository_loads_bounded_display_records_without_device_secret() 
     assert snapshot.candidates[0].strategy_id == "PROCESS_LISTENER_ACTIVITY"
     assert snapshot.incidents[0].title == "Test incident"
 
+    await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_repository_derives_enrollment_and_telemetry_status_at_boundaries() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+    device_rows = (
+        ("recent", True, now - timedelta(seconds=90)),
+        ("stale", True, now - timedelta(seconds=90, microseconds=1)),
+        ("never", True, None),
+        ("disabled", False, now),
+    )
+    async with session_factory() as session:
+        for name, is_active, last_seen_at in device_rows:
+            session.add(
+                Device(
+                    external_id=f"console-{name}",
+                    name=name,
+                    os="Linux",
+                    os_version="test",
+                    kernel="test",
+                    architecture="x86_64",
+                    token_digest=f"digest-{name}",
+                    is_active=is_active,
+                    last_seen_at=last_seen_at,
+                )
+            )
+        await session.commit()
+
+    repository = ConsoleRepository(
+        session_factory,
+        engine=engine,
+        stale_after=timedelta(seconds=90),
+        now=lambda: now,
+    )
+    snapshot = await repository.load()
+    status_by_name = {row.name: (row.enrollment, row.telemetry_status) for row in snapshot.devices}
+
+    assert status_by_name == {
+        "recent": ("enabled", "recent"),
+        "stale": ("enabled", "stale"),
+        "never": ("enabled", "never"),
+        "disabled": ("disabled", "disabled"),
+    }
     await repository.close()

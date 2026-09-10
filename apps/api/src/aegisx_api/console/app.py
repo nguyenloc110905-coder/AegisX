@@ -42,6 +42,7 @@ class AegisXConsole(App[None]):
     TabbedContent { height: 1fr; }
     TabPane { padding: 0; }
     DataTable { height: 1fr; border: round #1e3a5f; background: #060d14; }
+    #coverage-panel { height: 3; padding: 0 1; color: #e0a84f; }
     #log-panel { height: 3; padding: 0 1; color: #8fb8d8; }
     """
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
@@ -78,6 +79,11 @@ class AegisXConsole(App[None]):
                     yield DataTable(id="tbl-candidates", cursor_type="row", zebra_stripes=True)
                 with TabPane("Incidents [5]", id="incidents"):
                     yield DataTable(id="tbl-incidents", cursor_type="row", zebra_stripes=True)
+            yield Static(
+                "Polling telemetry only; AegisX does not prevent attacks and may miss activity "
+                "between snapshots.",
+                id="coverage-panel",
+            )
             yield Static("Starting…", id="log-panel")
         yield Footer()
 
@@ -104,12 +110,20 @@ class AegisXConsole(App[None]):
         self._fill_tables(snapshot)
         self.query_one("#log-panel", Static).update(
             f"Connected · {snapshot.counts.events} events · "
-            f"{snapshot.counts.detections} detections · press r to refresh"
+            f"{snapshot.counts.detections} detections · "
+            "rule matches are not automatic alerts · press r to refresh"
         )
 
     def _configure_tables(self) -> None:
         self.query_one("#tbl-devices", DataTable).add_columns(
-            "Name", "OS", "Version", "Kernel", "Arch", "Active", "Last seen"
+            "Name",
+            "OS",
+            "Version",
+            "Kernel",
+            "Arch",
+            "Enrollment",
+            "Telemetry",
+            "Last seen",
         )
         self.query_one("#tbl-events", DataTable).add_columns(
             "Time", "Type", "PID", "Executable", "Local", "Remote", "Severity"
@@ -152,7 +166,8 @@ class AegisXConsole(App[None]):
                 device_row.os_version[:28],
                 device_row.kernel[:22],
                 device_row.architecture,
-                "yes" if device_row.is_active else "no",
+                device_row.enrollment,
+                device_row.telemetry_status,
                 _timestamp(device_row.last_seen_at),
                 key=str(device_row.id),
             )

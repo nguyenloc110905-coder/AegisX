@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -15,6 +18,7 @@ from aegisx_api.console.types import (
     DeviceRow,
     EventRow,
     IncidentRow,
+    TelemetryStatus,
 )
 from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
@@ -29,17 +33,31 @@ class ConsoleRepository:
         session_factory: async_sessionmaker[AsyncSession],
         *,
         engine: AsyncEngine | None = None,
+        stale_after: timedelta = timedelta(seconds=90),
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._session_factory = session_factory
         self._engine = engine
+        self._stale_after = stale_after
+        self._now = now
 
     @classmethod
-    def from_url(cls, database_url: str) -> "ConsoleRepository":
+    def from_url(
+        cls,
+        database_url: str,
+        *,
+        stale_after: timedelta = timedelta(seconds=90),
+    ) -> "ConsoleRepository":
         engine = create_async_engine(database_url, pool_pre_ping=True)
-        return cls(async_sessionmaker(engine, expire_on_commit=False), engine=engine)
+        return cls(
+            async_sessionmaker(engine, expire_on_commit=False),
+            engine=engine,
+            stale_after=stale_after,
+        )
 
     async def load(self, limit: int = 200) -> DashboardSnapshot:
         bounded_limit = min(max(limit, 1), 500)
+        current_time = self._now()
         async with self._session_factory() as session:
             counts = DashboardCounts(
                 devices=await self._count(session, Device, Device.is_active.is_(True)),
@@ -56,7 +74,8 @@ class ConsoleRepository:
                     os_version=row.os_version,
                     kernel=row.kernel,
                     architecture=row.architecture,
-                    is_active=row.is_active,
+                    enrollment="enabled" if row.is_active else "disabled",
+                    telemetry_status=self._telemetry_status(row, current_time),
                     last_seen_at=row.last_seen_at,
                 )
                 for row in (
@@ -138,6 +157,18 @@ class ConsoleRepository:
                 ).all()
             )
         return DashboardSnapshot(counts, devices, events, detections, candidates, incidents)
+
+    def _telemetry_status(self, device: Device, current_time: datetime) -> TelemetryStatus:
+        if not device.is_active:
+            return "disabled"
+        if device.last_seen_at is None:
+            return "never"
+        last_seen_at = device.last_seen_at
+        if last_seen_at.tzinfo is None:
+            last_seen_at = last_seen_at.replace(tzinfo=UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+        return "recent" if last_seen_at >= current_time - self._stale_after else "stale"
 
     async def close(self) -> None:
         if self._engine is not None:

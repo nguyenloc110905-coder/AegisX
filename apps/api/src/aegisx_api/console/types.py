@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
+
+TelemetryStatus = Literal["recent", "stale", "never", "disabled"]
 
 
 @dataclass(frozen=True)
@@ -20,7 +23,8 @@ class DeviceRow:
     os_version: str
     kernel: str
     architecture: str
-    is_active: bool
+    enrollment: Literal["enabled", "disabled"]
+    telemetry_status: TelemetryStatus
     last_seen_at: datetime | None
 
 
