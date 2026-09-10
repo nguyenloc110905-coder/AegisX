@@ -27,9 +27,9 @@ Every `DetectionRule` exposes a stable ID, name, description, category, severity
 | Rule | Evidence | Severity | Contribution | Interpretation |
 |---|---|---:|---:|---|
 | `PROCESS_STARTED` | `process.started` | informational | 0 | Records the agent-proven newly observed process identity. It does not label every process suspicious. |
-| `LISTENER_OBSERVED` | `network.listener_observed` | low | 5 | Records that a listener existed in a snapshot. It does not claim the listener was newly opened. |
+| `LISTENER_OPENED` | `network.listener_opened` | low | 5 | Records that an endpoint changed from absent to present across consecutive complete snapshots. It is not a malware conclusion. |
 
-`HIGH_RESOURCE_USAGE` is deferred. The current event is one process resource sample and does not prove sustained resource abuse. Correlation is implemented separately as the limited `PROCESS_LISTENER_ACTIVITY` Candidate behavior documented in [correlation-engine.md](correlation-engine.md); it does not create Incidents. Ransomware, brute-force, port-scan, persistence, DNS, Wi-Fi, AI, incidents, notifications, and UI remain excluded.
+`HIGH_RESOURCE_USAGE` is deferred. The current event is one process resource sample and does not prove sustained resource abuse. Historical or opted-in `network.listener_observed` Events remain persistable but produce no default Detection. Correlation is implemented separately as the limited `PROCESS_LISTENER_ACTIVITY` Candidate behavior documented in [correlation-engine.md](correlation-engine.md). The Incident foundation exists, but no production policy promotes this low-confidence Candidate. Ransomware, brute-force, port-scan, persistence, DNS, Wi-Fi, AI, notifications, response execution, and web/desktop UI remain excluded.
 
 ## Risk scoring
 

@@ -467,11 +467,11 @@ git commit -m "feat(launcher): guard development data reset"
 - Documentation must describe current defaults and evidence semantics, not planned eBPF or discarded external rules.
 - Completion evidence records fresh command results only.
 
-- [ ] **Step 1: Update semantic documentation**
+- [x] **Step 1: Update semantic documentation**
 
 Document opt-in observational Events, default transition-only collection, `LISTENER_OPENED`, unchanged low-confidence correlation, historical-row compatibility, recency labels, polling limitations, and guarded reset behavior. Remove stale statements that Incident is unimplemented while preserving the 6A boundaries.
 
-- [ ] **Step 2: Run complete automated verification**
+- [x] **Step 2: Run complete automated verification**
 
 Run:
 
@@ -493,7 +493,7 @@ podman compose --env-file .env.example config --quiet
 git diff --check
 ```
 
-- [ ] **Step 3: Verify PostgreSQL and Alembic without deleting development data**
+- [x] **Step 3: Verify PostgreSQL and Alembic without deleting development data**
 
 Create a uniquely named isolated PostgreSQL database, set `DATABASE_URL` for API integration tests, run all integration tests, then verify:
 
@@ -507,9 +507,14 @@ Expected current/head: `0005_incident_foundation`. Drop only the uniquely named 
 
 - [ ] **Step 4: Run real operator smoke test**
 
+Blocked only for the full launcher wrapper because the user's existing `aegisx run` owns port 8000
+and the global launcher lock. The feature console itself was run in a separate PTY against the live
+database: coverage warning and recency columns rendered, `r` refreshed successfully, and `q`
+restored the terminal with exit code 0. The user-owned launcher and children were not interrupted.
+
 Run `aegisx run`, verify the coverage warning and Device recency columns, press `r`, then `q`. Confirm exit code 0, no API/agent/console child remains, and no launcher ownership file remains.
 
-- [ ] **Step 5: Audit post-upgrade signal volume**
+- [x] **Step 5: Audit post-upgrade signal volume**
 
 Run two complete agent cycles against the development service without reset. Query rows created after the audit start timestamp and confirm:
 

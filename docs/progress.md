@@ -371,3 +371,65 @@ Status: implemented and smoke-tested.
 ### Scope boundary
 
 This is a local terminal interface, not a web or desktop UI. Cross-machine signed/checksummed release packaging remains the next packaging stage. AI, Decision/Policy, response actions, notifications, and new Incident promotion behavior were not added.
+
+## Telemetry Signal Quality Hardening
+
+Status: implemented and verified on the feature branch.
+
+### Quiet, truthful collection defaults
+
+- `process.resource_usage`, `network.listener_observed`, and
+  `network.connection_observed` agent output is disabled by default. Explicit environment settings
+  can opt back into these high-volume observations without weakening private baseline comparison.
+- The first complete process/network collection establishes baselines without fabricating lifecycle
+  transitions. Later `started`/`exited` and `opened`/`closed` Events still require trustworthy
+  consecutive snapshots and remain enabled by default.
+- A two-cycle real-agent audit using isolated agent state produced only two `system.status`, two
+  truthful `process.exited`, and one `network.connection_opened` Event. It produced zero resource or
+  network observation Events and zero Detections. The exact audit Device and temporary state were
+  removed afterward; existing development evidence was not reset.
+
+### Detection and correlation
+
+- Replaced the default `LISTENER_OBSERVED` rule with `LISTENER_OPENED` over
+  `network.listener_opened`. It remains low severity with deterministic contribution 5 and neutral
+  wording. Historical and opt-in listener observation Events persist without a default Detection.
+- `PROCESS_LISTENER_ACTIVITY` now requires `PROCESS_STARTED` plus `LISTENER_OPENED`. Its inclusive
+  time window, process identity, one-Candidate key, low confidence, score calculation, savepoint,
+  and persistence semantics are unchanged. Repeated unchanged snapshots cannot create a Candidate.
+
+### Console and development operations
+
+- The Device table separates enrollment from telemetry status. Telemetry is `recent` at the exact
+  configured boundary, then `stale`; never-seen and disabled devices are explicit. The default
+  threshold is 90 seconds and is bounded from 5 to 86,400 seconds.
+- The terminal console permanently warns that polling may miss activity and that AegisX does not
+  prevent attacks. Rule matches are explicitly not automatic alerts.
+- Added `aegisx dev-reset --yes`. It refuses missing confirmation, non-development or malformed
+  environment selection, missing Compose, provider failure, and a concurrent launcher. Successful
+  execution removes only Compose PostgreSQL volumes; agent identity/outbox state is preserved. The
+  destructive command was not invoked during verification.
+
+### Verification
+
+- API: `109 passed` with all 17 PostgreSQL integration tests enabled on an isolated database.
+- Agent: `47 passed`; launcher: `51 passed` with isolated launcher state.
+- API, agent, and launcher Ruff format/check passed. Strict mypy passed on 51, 16, and 7 source
+  files respectively.
+- Alembic isolated PostgreSQL `upgrade head`, `current`, and `heads` reached
+  `0005_incident_foundation (head)`. The isolated database was dropped afterward.
+- Docker Compose and Podman Compose configuration validation, `git diff --check`, and a standalone
+  real Textual console `r` refresh/`q` exit passed. The user's already-running launcher, API, agent,
+  console, database, and ownership lock were left intact.
+
+### Remaining limitations and scope
+
+- Polling can miss short-lived activity between snapshots. Missing permissions, malformed socket
+  data, or process races deliberately suppress transitions instead of guessing.
+- PID is not part of canonical socket identity and listener evidence lacks process `create_time`, so
+  the current process/listener Candidate remains low confidence.
+- Per-listener Candidate timeline detail, background reconciliation, retention, cross-machine signed
+  packaging, service installation, Decision/Policy, response execution, notifications, advanced
+  detection packs, and web/desktop UI remain unimplemented. AI remains removed from the roadmap.
+- No Incident policy was added or changed; the low-confidence score-5 Candidate still does not
+  automatically create an Incident.
