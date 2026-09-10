@@ -112,6 +112,7 @@ A separate explicit launcher command, `aegisx dev-reset --yes`, may remove the l
 Safety requirements:
 
 - reject unless the selected environment is exactly `development`;
+- resolve `AEGISX_ENV`/`AEGISX_ENVIRONMENT` from the process environment first, then the selected env file, with the API's absent-value default of `development`;
 - reject without the literal `--yes` flag;
 - refuse while a launcher instance is active;
 - operate only through the selected repository Compose project and its named volumes;
