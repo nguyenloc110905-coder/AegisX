@@ -505,12 +505,11 @@ uv run --project apps/api alembic -c apps/api/alembic.ini heads
 
 Expected current/head: `0005_incident_foundation`. Drop only the uniquely named isolated database after success. Do not invoke `aegisx dev-reset --yes`.
 
-- [ ] **Step 4: Run real operator smoke test**
+- [x] **Step 4: Run real operator smoke test**
 
-Blocked only for the full launcher wrapper because the user's existing `aegisx run` owns port 8000
-and the global launcher lock. The feature console itself was run in a separate PTY against the live
-database: coverage warning and recency columns rendered, `r` refreshed successfully, and `q`
-restored the terminal with exit code 0. The user-owned launcher and children were not interrupted.
+After the earlier user-owned launcher exited, the feature launcher was run in a real PTY. It selected
+Podman, opened the console, rendered the coverage warning and priority recency columns, refreshed on
+`r`, exited cleanly on `q`, removed its ownership state, and left no API/agent/console child.
 
 Run `aegisx run`, verify the coverage warning and Device recency columns, press `r`, then `q`. Confirm exit code 0, no API/agent/console child remains, and no launcher ownership file remains.
 
@@ -524,7 +523,7 @@ Run two complete agent cycles against the development service without reset. Que
 - repeated unchanged snapshots create no listener-opened Detection;
 - any emitted transition matches the documented baseline change.
 
-- [ ] **Step 6: Record evidence and commit documentation**
+- [x] **Step 6: Record evidence and commit documentation**
 
 Write exact fresh test counts and limitations in `docs/progress.md`, then run `git diff --check` and commit:
 
@@ -533,7 +532,7 @@ git add docs .env.example
 git commit -m "docs: publish telemetry signal quality defaults"
 ```
 
-- [ ] **Step 7: Final repository audit**
+- [x] **Step 7: Final repository audit**
 
 Run:
 

@@ -418,9 +418,10 @@ Status: implemented and verified on the feature branch.
   files respectively.
 - Alembic isolated PostgreSQL `upgrade head`, `current`, and `heads` reached
   `0005_incident_foundation (head)`. The isolated database was dropped afterward.
-- Docker Compose and Podman Compose configuration validation, `git diff --check`, and a standalone
-  real Textual console `r` refresh/`q` exit passed. The user's already-running launcher, API, agent,
-  console, database, and ownership lock were left intact.
+- Docker Compose and Podman Compose configuration validation and `git diff --check` passed. A real
+  feature-branch `aegisx run` selected Podman, rendered the coverage warning and priority recency
+  columns, refreshed on `r`, exited on `q`, restored terminal modes, removed launcher ownership
+  state, and left no API/agent/console child. PostgreSQL remained healthy.
 
 ### Remaining limitations and scope
 
