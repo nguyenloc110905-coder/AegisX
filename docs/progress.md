@@ -413,7 +413,7 @@ Status: implemented and verified on the feature branch.
 ### Verification
 
 - API: `109 passed` with all 17 PostgreSQL integration tests enabled on an isolated database.
-- Agent: `47 passed`; launcher: `51 passed` with isolated launcher state.
+- Agent: `47 passed`; launcher: `52 passed` with isolated launcher state.
 - API, agent, and launcher Ruff format/check passed. Strict mypy passed on 51, 16, and 7 source
   files respectively.
 - Alembic isolated PostgreSQL `upgrade head`, `current`, and `heads` reached

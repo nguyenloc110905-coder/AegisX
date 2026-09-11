@@ -343,6 +343,7 @@ def test_dev_reset_removes_compose_volumes_and_preserves_agent_state_message(
     assert runtime.dev_reset(confirmed=True) == 0
     assert runner.calls == [provider.argv(env_file, "down", "--volumes", "--remove-orphans")]
     output = capsys.readouterr().out
+    assert output.index("will be unrecoverable") < output.index("was removed")
     assert "PostgreSQL evidence was removed" in output
     assert "agent identity and outbox were preserved" in output
 

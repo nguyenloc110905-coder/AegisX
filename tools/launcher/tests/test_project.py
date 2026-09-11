@@ -240,10 +240,12 @@ def test_dev_reset_dispatches_confirmation_while_holding_state(
     assert events == ["state-enter", f"dev-reset:{confirmed}", "state-exit"]
 
 
+@pytest.mark.parametrize("arguments", [[], ["dev-reset", "--yes"]])
 def test_duplicate_launcher_is_reported_without_starting_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
 ) -> None:
     project = _make_project(tmp_path / "aegisx")
     (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
@@ -264,5 +266,5 @@ def test_duplicate_launcher_is_reported_without_starting_runtime(
     monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
     monkeypatch.setattr("aegisx_launcher.cli.LauncherState", RejectingState)
 
-    assert main([]) == 3
+    assert main(arguments) == 3
     assert "already active" in capsys.readouterr().err

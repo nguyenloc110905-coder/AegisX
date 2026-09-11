@@ -136,6 +136,7 @@ class AegisXRuntime:
         if not providers:
             print("[failed] no valid Docker or Podman Compose provider")
             return 1
+        print("[warning] All local AegisX PostgreSQL evidence will be unrecoverable.")
         for provider in providers:
             result = self._runner.run(
                 provider.argv(self._env_file, "down", "--volumes", "--remove-orphans"),
