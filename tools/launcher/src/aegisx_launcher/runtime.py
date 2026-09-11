@@ -252,9 +252,12 @@ class AegisXRuntime:
                 ),
             )
             for argv in setup_commands:
-                result = self._runner.run(argv, cwd=self._root, timeout=300)
+                result = self._runner.run(argv, cwd=self._root, timeout=900)
                 if result.returncode != 0:
-                    print(f"[failed] setup command exited with code {result.returncode}: {argv[1]}")
+                    print(
+                        f"[failed] setup command exited with code {result.returncode}: "
+                        f"{argv[1]} ({result.diagnostic()})"
+                    )
                     return 1
 
             api_argv = (

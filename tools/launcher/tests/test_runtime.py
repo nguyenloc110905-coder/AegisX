@@ -14,6 +14,7 @@ class FakeRunner:
     def __init__(self, handler: Callable[[tuple[str, ...]], tuple[int, str, str]]) -> None:
         self.handler = handler
         self.calls: list[tuple[str, ...]] = []
+        self.timeouts: list[float | None] = []
 
     def executable_exists(self, executable: str) -> bool:
         return executable in {"uv", "docker", "podman", "systemctl"}
@@ -26,6 +27,7 @@ class FakeRunner:
         timeout: float | None = None,
     ) -> CommandResult:
         self.calls.append(argv)
+        self.timeouts.append(timeout)
         code, stdout, stderr = self.handler(argv)
         return CommandResult(argv, code, stdout, stderr)
 
@@ -121,6 +123,8 @@ def test_runtime_falls_back_provider_and_starts_agent_only_after_readiness(tmp_p
         runner.calls
     )
     assert readiness_calls == ["http://127.0.0.1:8000/health/ready"]
+    api_sync_index = runner.calls.index(("uv", "sync", "--project", "apps/api", "--all-groups"))
+    assert runner.timeouts[api_sync_index] == 900
     assert processes.calls == [
         (
             "uv",

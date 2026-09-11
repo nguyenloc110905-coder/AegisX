@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +47,20 @@ def test_command_runner_executes_argv_without_a_shell(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert result.stdout.strip() == "safe output"
     assert result.argv == (sys.executable, "-c", "print('safe output')")
+
+
+def test_command_runner_reports_timeout_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def timeout(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(("slow-command",), 1.5)
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+
+    result = CommandRunner().run(("slow-command",), cwd=tmp_path, timeout=1.5)
+
+    assert result.returncode == 124
+    assert result.stderr == "command timed out after 1.5 seconds"
 
 
 def test_command_result_bounds_diagnostic_output() -> None:

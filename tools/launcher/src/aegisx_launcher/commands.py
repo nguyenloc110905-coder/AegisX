@@ -32,12 +32,15 @@ class CommandRunner:
         timeout: float | None = None,
     ) -> CommandResult:
         # Commands are constructed as argv tuples by the launcher; no shell is involved.
-        completed = subprocess.run(  # noqa: S603
-            argv,
-            cwd=cwd,
-            timeout=timeout,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            completed = subprocess.run(  # noqa: S603
+                argv,
+                cwd=cwd,
+                timeout=timeout,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(argv, 124, "", f"command timed out after {timeout} seconds")
         return CommandResult(argv, completed.returncode, completed.stdout, completed.stderr)
