@@ -445,3 +445,12 @@ Status: implemented after a clean Fedora 44 installation exposed the portability
 - Added a foundation regression check that rejects a return to the ambiguous short image name.
 - A separate local `.env` may move `POSTGRES_HOST_PORT` and `DATABASE_URL` together when port 5432
   is already occupied; the existing system PostgreSQL service does not need to be stopped.
+- Slow first-time dependency downloads now have a 15-minute setup budget instead of the previous
+  fixed five minutes. A setup timeout becomes a bounded launcher failure with a clear diagnostic
+  and cleanup rather than leaking a Python `TimeoutExpired` traceback.
+- Local regression verification after this change: API `109 passed` with all 17 PostgreSQL tests on
+  an isolated migrated database, agent `47 passed`, launcher `53 passed`; Ruff format/check, strict
+  mypy, Docker/Podman Compose validation, foundation checks, and whitespace validation passed.
+- Remote Fedora verification remains incomplete: PostgreSQL became healthy on
+  `127.0.0.1:55432`, but the slow-network launcher retry was stopped when the remote host became
+  unavailable and cross-machine testing was deferred.

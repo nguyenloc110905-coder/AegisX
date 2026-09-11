@@ -175,7 +175,7 @@ AegisX/
 
 ### Developer launcher
 
-**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies, migrates to Alembic head, waits for API readiness, and supervises the host agent. The default `aegisx run` starts the Textual console in the foreground while API/agent output is suppressed; `--no-ui` retains raw log mode. `aegisx dev-reset --yes` is an explicit development-only, single-instance-guarded Compose-volume reset and preserves host agent state. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
+**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies with a 15-minute first-run budget and bounded timeout diagnostics, migrates to Alembic head, waits for API readiness, and supervises the host agent. The default `aegisx run` starts the Textual console in the foreground while API/agent output is suppressed; `--no-ui` retains raw log mode. `aegisx dev-reset --yes` is an explicit development-only, single-instance-guarded Compose-volume reset and preserves host agent state. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
 
 ### Terminal Operator Console
 
