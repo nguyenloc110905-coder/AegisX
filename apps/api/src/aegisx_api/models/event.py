@@ -12,6 +12,7 @@ class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         CheckConstraint("schema_version > 0", name="positive_schema_version"),
+        Index("ix_events_event_type_ingested_at", "event_type", "ingested_at"),
         Index("ix_events_device_timestamp", "device_id", "timestamp"),
         Index("ix_events_device_process", "device_id", "process_id", "timestamp"),
         Index("ix_events_device_remote", "device_id", "remote_ip", "remote_port", "timestamp"),

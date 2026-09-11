@@ -11,4 +11,4 @@ def test_migration_head_is_single_and_named() -> None:
 
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["0005_incident_foundation"]
+    assert scripts.get_heads() == ["0006_event_retention_index"]
