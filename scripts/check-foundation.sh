@@ -50,6 +50,7 @@ for variable in \
 done
 
 test -x scripts/check-foundation.sh
+grep -q '^    image: docker.io/library/postgres:17-alpine$' compose.yaml
 grep -q '^## Current implementation$' README.md
 grep -q '^## Milestone 0 — Repository Foundation$' docs/progress.md
 grep -q '^Status: complete' docs/progress.md

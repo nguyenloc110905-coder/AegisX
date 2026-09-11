@@ -434,3 +434,14 @@ Status: implemented and verified on the feature branch.
   detection packs, and web/desktop UI remain unimplemented. AI remains removed from the roadmap.
 - No Incident policy was added or changed; the low-confidence score-5 Candidate still does not
   automatically create an Incident.
+
+## Cross-machine Podman compatibility hotfix
+
+Status: implemented after a clean Fedora 44 installation exposed the portability defect.
+
+- Qualified the PostgreSQL image as `docker.io/library/postgres:17-alpine`. Rootless Podman with
+  enforced short-name resolution can now pull it non-interactively instead of failing because no
+  registry can be selected without a TTY.
+- Added a foundation regression check that rejects a return to the ambiguous short image name.
+- A separate local `.env` may move `POSTGRES_HOST_PORT` and `DATABASE_URL` together when port 5432
+  is already occupied; the existing system PostgreSQL service does not need to be stopped.

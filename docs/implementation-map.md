@@ -220,7 +220,10 @@ The most complete implemented flow is one agent collection cycle through Postgre
 
 ## 6. Database implementation
 
-- `compose.yaml` runs `postgres:17-alpine`, binds only `127.0.0.1`, persists a named volume, mounts an SELinux-compatible read-only init directory, health-checks with `pg_isready`, limits memory to 256 MiB, and applies `no-new-privileges`.
+- `compose.yaml` runs the fully qualified `docker.io/library/postgres:17-alpine` image so
+  non-interactive rootless Podman never requires short-name registry selection. It binds only
+  `127.0.0.1`, persists a named volume, mounts an SELinux-compatible read-only init directory,
+  health-checks with `pg_isready`, limits memory to 256 MiB, and applies `no-new-privileges`.
 - `Settings.database_url` defaults to `postgresql+asyncpg://...`; secrets are development defaults in `.env.example`.
 - `db/session.py` uses `create_async_engine(..., pool_pre_ping=True)` and `async_sessionmaker(..., expire_on_commit=False)`. `session_scope()` exists but is currently unused; request sessions come from `get_database_session()`.
 - `Device` has identity/platform fields, unique token digest, active flag, timestamps, and a one-to-many Event relationship.
