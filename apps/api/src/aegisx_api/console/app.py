@@ -117,13 +117,13 @@ class AegisXConsole(App[None]):
     def _configure_tables(self) -> None:
         self.query_one("#tbl-devices", DataTable).add_columns(
             "Name",
+            "Enrollment",
+            "Telemetry",
+            "Last seen",
             "OS",
             "Version",
             "Kernel",
             "Arch",
-            "Enrollment",
-            "Telemetry",
-            "Last seen",
         )
         self.query_one("#tbl-events", DataTable).add_columns(
             "Time", "Type", "PID", "Executable", "Local", "Remote", "Severity"
@@ -162,13 +162,13 @@ class AegisXConsole(App[None]):
         for device_row in snapshot.devices:
             devices.add_row(
                 device_row.name,
+                device_row.enrollment,
+                device_row.telemetry_status,
+                _timestamp(device_row.last_seen_at),
                 device_row.os,
                 device_row.os_version[:28],
                 device_row.kernel[:22],
                 device_row.architecture,
-                device_row.enrollment,
-                device_row.telemetry_status,
-                _timestamp(device_row.last_seen_at),
                 key=str(device_row.id),
             )
         for event_row in snapshot.events:

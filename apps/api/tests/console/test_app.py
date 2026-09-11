@@ -82,6 +82,7 @@ async def test_console_mounts_and_populates_all_real_object_tables() -> None:
         device_columns = [
             str(column.label) for column in app.query_one("#tbl-devices").columns.values()
         ]
+        assert device_columns[:4] == ["Name", "Enrollment", "Telemetry", "Last seen"]
         assert "Enrollment" in device_columns
         assert "Telemetry" in device_columns
         assert "Last seen" in device_columns
