@@ -1,18 +1,20 @@
 import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from aegisx_agent.events import NormalizedEvent
 from aegisx_agent.local_store import (
+    LocalStoreCapacityError,
+    LocalStoreError,
     LocalStoreIntegrityError,
     LocalStoreMigrationError,
     LocalStorePathError,
     LocalTelemetryStore,
 )
-from aegisx_agent.local_types import DeliveryState
+from aegisx_agent.local_types import CoverageGapCategory, DeliveryState
 
 FIXED_TIME = datetime(2026, 9, 12, 12, tzinfo=UTC)
 FIRST_ID = "00000000-0000-0000-0000-000000000001"
@@ -100,7 +102,7 @@ def test_acknowledge_rolls_back_complete_transition_on_sqlite_failure(tmp_path: 
         f"WHEN OLD.event_id = '{SECOND_ID}' BEGIN SELECT RAISE(ABORT, 'test'); END"
     )
 
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(LocalStoreError, match="acknowledgement"):
         store.acknowledge([first.id, second.id])
 
     assert store.delivery_state(first.id) is DeliveryState.PENDING
@@ -212,3 +214,207 @@ def test_malformed_legacy_payload_rolls_back_complete_migration(tmp_path: Path) 
         assert "pending_events" in tables
         assert "quarantined_events" in tables
         assert "local_events" not in tables
+
+
+def test_verify_reports_valid_rows_and_first_bounded_integrity_failure(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "outbox.sqlite3")
+    store.enqueue([event(FIRST_ID), event(SECOND_ID)])
+
+    valid = store.verify()
+    assert valid.valid is True
+    assert valid.checked_events == 2
+    assert valid.first_bad_sequence is None
+    assert valid.failure_category is None
+
+    store._connection.execute(
+        "UPDATE local_events SET payload_hash = ? WHERE event_id = ?",
+        ("0" * 64, SECOND_ID),
+    )
+    store._connection.commit()
+
+    invalid = store.verify()
+    assert invalid.valid is False
+    assert invalid.checked_events == 1
+    assert invalid.first_bad_sequence == 2
+    assert invalid.failure_category == "payload_hash_mismatch"
+    assert FIRST_ID not in repr(invalid)
+    assert SECOND_ID not in repr(invalid)
+    store.close()
+
+
+def test_data_status_contains_counts_and_no_raw_payload(tmp_path: Path) -> None:
+    path = tmp_path / "outbox.sqlite3"
+    store = make_store(path)
+    first = event(FIRST_ID, "system.status")
+    second = event(SECOND_ID, "process.started")
+    store.enqueue([first, second])
+    store.acknowledge([first.id])
+    store.quarantine([second.id], "http_422")
+
+    status = store.data_status()
+
+    assert status.policy_version == 1
+    assert status.schema_version == 2
+    assert status.event_count == 2
+    assert status.pending_count == 0
+    assert status.acknowledged_count == 1
+    assert status.quarantined_count == 1
+    assert status.logical_payload_bytes > 0
+    assert status.database_file_bytes == path.stat().st_size
+    assert [item.event_type for item in status.event_types] == [
+        "process.started",
+        "system.status",
+    ]
+    assert "hostname" not in repr(status)
+    store.close()
+
+
+def test_clock_rollback_keeps_recorded_time_monotonic_and_records_gap(tmp_path: Path) -> None:
+    times = iter(
+        [
+            datetime(2026, 9, 12, 12, tzinfo=UTC),
+            datetime(2026, 9, 12, 11, tzinfo=UTC),
+        ]
+    )
+    store = LocalTelemetryStore(
+        tmp_path / "outbox.sqlite3",
+        max_events=100,
+        max_payload_bytes=1024 * 1024,
+        clock=lambda: next(times),
+    )
+    store.enqueue([event(FIRST_ID)])
+    store.enqueue([event(SECOND_ID)])
+
+    rows = store._connection.execute(
+        "SELECT recorded_at FROM local_events ORDER BY sequence"
+    ).fetchall()
+    assert rows[0][0] == rows[1][0]
+    gaps = store._connection.execute("SELECT category, reason FROM coverage_gaps").fetchall()
+    assert gaps == [("CLOCK_REGRESSION", "local clock moved backwards")]
+    store.close()
+
+
+def test_retention_cutoff_is_inclusive_and_preserves_noneligible_states(tmp_path: Path) -> None:
+    evaluation = datetime(2026, 9, 12, 12, tzinfo=UTC)
+    store = make_store(tmp_path / "outbox.sqlite3")
+    events = [
+        event(FIRST_ID, "network.listener_observed"),
+        event(SECOND_ID, "network.connection_observed"),
+        event("00000000-0000-0000-0000-000000000003", "process.resource_usage"),
+        event("00000000-0000-0000-0000-000000000004", "future.signal"),
+    ]
+    store.enqueue(events)
+    store.acknowledge([item.id for item in events])
+    cutoff = evaluation.replace(day=11)
+    store._connection.execute(
+        "UPDATE local_events SET recorded_at = ? WHERE event_id = ?",
+        ((cutoff.replace(microsecond=1)).isoformat(), events[0].id),
+    )
+    store._connection.execute(
+        "UPDATE local_events SET recorded_at = ? WHERE event_id = ?",
+        (cutoff.isoformat(), events[1].id),
+    )
+    store._connection.execute(
+        "UPDATE local_events SET recorded_at = ?, delivery_state = 'PENDING', "
+        "acknowledged_at = NULL WHERE event_id = ?",
+        ((cutoff.replace(microsecond=0) - timedelta(microseconds=1)).isoformat(), events[2].id),
+    )
+    store._connection.execute(
+        "UPDATE local_events SET recorded_at = ? WHERE event_id = ?",
+        ((cutoff - timedelta(days=100)).isoformat(), events[3].id),
+    )
+    store._connection.commit()
+
+    report = store.dry_run(evaluation)
+    bulk = next(rule for rule in report.rules if rule.priority == "BULK")
+    assert bulk.eligible_events == 1
+
+    result = store.prune(evaluation, batch_size=1)
+    repeated = store.prune(evaluation, batch_size=1)
+    assert result.deleted_events == 1
+    assert repeated.deleted_events == 0
+    assert store.delivery_state(events[0].id) is DeliveryState.ACKED
+    assert store.delivery_state(events[1].id) is None
+    assert store.delivery_state(events[2].id) is DeliveryState.PENDING
+    assert store.delivery_state(events[3].id) is DeliveryState.ACKED
+    store.close()
+
+
+def test_capacity_prunes_only_expired_acknowledged_data_or_records_gap(tmp_path: Path) -> None:
+    path = tmp_path / "outbox.sqlite3"
+    store = LocalTelemetryStore(
+        path, max_events=100, max_payload_bytes=350, clock=lambda: FIXED_TIME
+    )
+    expired = event(FIRST_ID, "process.resource_usage")
+    protected = event(SECOND_ID, "process.started")
+    store.enqueue([expired])
+    store.acknowledge([expired.id])
+    store._connection.execute(
+        "UPDATE local_events SET recorded_at = ? WHERE event_id = ?",
+        ((FIXED_TIME - timedelta(days=2)).isoformat(), expired.id),
+    )
+    store._connection.commit()
+
+    store.enqueue([protected])
+    assert store.delivery_state(expired.id) is None
+    assert store.delivery_state(protected.id) is DeliveryState.PENDING
+
+    too_large = event("00000000-0000-0000-0000-000000000003", "process.started", value=999)
+    with pytest.raises(LocalStoreCapacityError):
+        store.enqueue([too_large])
+    assert store.delivery_state(protected.id) is DeliveryState.PENDING
+    gap = store._connection.execute(
+        "SELECT category, dropped_event_count FROM coverage_gaps ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert gap == (CoverageGapCategory.STORAGE_LIMIT.value, 1)
+    store.close()
+
+
+def test_write_failure_uses_bounded_sidecar_and_imports_it_after_recovery(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "outbox.sqlite3"
+    store = make_store(path)
+    store._connection.execute(
+        "CREATE TRIGGER reject_insert BEFORE INSERT ON local_events "
+        "BEGIN SELECT RAISE(ABORT, 'sensitive raw failure'); END"
+    )
+
+    with pytest.raises(LocalStoreError, match="local telemetry write failed"):
+        store.enqueue([event(FIRST_ID)])
+
+    sidecar = tmp_path / "coverage-gap.json"
+    sidecar_text = sidecar.read_text(encoding="utf-8")
+    assert sidecar.stat().st_mode & 0o777 == 0o600
+    assert "STORAGE_WRITE_FAILURE" in sidecar_text
+    assert FIRST_ID not in sidecar_text
+    assert "sensitive" not in sidecar_text
+    store.close()
+
+    recovered = make_store(path)
+    assert not sidecar.exists()
+    assert recovered.data_status().coverage_gap_count == 1
+    recovered.close()
+
+
+def test_prune_rolls_back_failed_batch_without_partial_deletion(tmp_path: Path) -> None:
+    evaluation = datetime(2026, 9, 12, 12, tzinfo=UTC)
+    store = make_store(tmp_path / "outbox.sqlite3")
+    first = event(FIRST_ID, "process.resource_usage")
+    second = event(SECOND_ID, "process.resource_usage")
+    store.enqueue([first, second])
+    store.acknowledge([first.id, second.id])
+    expired_at = (evaluation - timedelta(days=2)).isoformat()
+    store._connection.execute("UPDATE local_events SET recorded_at = ?", (expired_at,))
+    store._connection.execute(
+        "CREATE TRIGGER reject_prune BEFORE DELETE ON local_events "
+        f"WHEN OLD.event_id = '{SECOND_ID}' BEGIN SELECT RAISE(ABORT, 'test'); END"
+    )
+    store._connection.commit()
+
+    with pytest.raises(LocalStoreError, match="prune failed"):
+        store.prune(evaluation, batch_size=2)
+
+    assert store.delivery_state(first.id) is DeliveryState.ACKED
+    assert store.delivery_state(second.id) is DeliveryState.ACKED
+    store.close()

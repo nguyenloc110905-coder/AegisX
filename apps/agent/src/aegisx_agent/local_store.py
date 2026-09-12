@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import stat
@@ -14,9 +15,28 @@ from aegisx_agent.local_policy import (
     calculate_payload_hash,
     canonical_event_json,
     classify_event,
+    retention_for,
+)
+from aegisx_agent.local_types import (
+    CoverageGapCategory,
+    EventPriority,
+    LocalDataStatus,
+    LocalEventTypeStats,
+    LocalPruneReport,
+    LocalPruneResult,
+    LocalPruneRuleReport,
+    LocalVerifyResult,
 )
 
 SCHEMA_VERSION = 2
+MAX_COVERAGE_GAPS = 1000
+
+_GAP_REASONS = {
+    CoverageGapCategory.STORAGE_LIMIT: "local telemetry storage limit reached",
+    CoverageGapCategory.STORAGE_WRITE_FAILURE: "local telemetry storage write failed",
+    CoverageGapCategory.CLOCK_REGRESSION: "local clock moved backwards",
+    CoverageGapCategory.LEGACY_MIGRATION_FAILURE: "legacy outbox migration failed",
+}
 
 
 class LocalStoreError(RuntimeError):
@@ -54,6 +74,7 @@ class LocalTelemetryStore:
         if max_events < 1 or max_payload_bytes < 1:
             raise ValueError("local telemetry bounds must be positive")
         self._path = path
+        self._gap_sidecar = path.with_name("coverage-gap.json")
         self._max_events = max_events
         self._max_payload_bytes = max_payload_bytes
         self._clock = clock
@@ -63,6 +84,7 @@ class LocalTelemetryStore:
             os.chmod(path, 0o600)
             self._configure()
             self._validate_and_migrate()
+            self._import_gap_sidecar()
         except Exception:
             self._connection.close()
             raise
@@ -109,17 +131,20 @@ class LocalTelemetryStore:
             self._connection.execute("BEGIN EXCLUSIVE")
             self._create_schema_v2()
             tables = self._table_names()
-            now = self._next_recorded_at()
+            pending_rows: list[tuple[object, ...]] = []
+            quarantine_rows: list[tuple[object, ...]] = []
             if "pending_events" in tables:
-                rows = self._connection.execute(
+                pending_rows = self._connection.execute(
                     "SELECT event_id, payload FROM pending_events ORDER BY sequence"
                 ).fetchall()
-                self._import_legacy(rows, DeliveryState.PENDING, None, now)
             if "quarantined_events" in tables:
-                rows = self._connection.execute(
+                quarantine_rows = self._connection.execute(
                     "SELECT event_id, payload, reason FROM quarantined_events ORDER BY sequence"
                 ).fetchall()
-                self._import_legacy_quarantine(rows, now)
+            if pending_rows or quarantine_rows:
+                now = self._next_recorded_at()
+                self._import_legacy(pending_rows, DeliveryState.PENDING, None, now)
+                self._import_legacy_quarantine(quarantine_rows, now)
             if "pending_events" in tables:
                 self._connection.execute("DROP TABLE pending_events")
             if "quarantined_events" in tables:
@@ -219,6 +244,174 @@ class LocalTelemetryStore:
             (recorded_at.isoformat(),),
         )
 
+    @staticmethod
+    def _require_aware(value: datetime, field: str) -> None:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{field} must be timezone-aware")
+
+    def _record_gap(
+        self,
+        category: CoverageGapCategory,
+        recorded_at: datetime,
+        dropped_event_count: int,
+        *,
+        closed: bool = False,
+    ) -> None:
+        existing = self._connection.execute(
+            "SELECT id FROM coverage_gaps WHERE category = ? AND ended_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (category.value,),
+        ).fetchone()
+        if existing is not None and not closed:
+            self._connection.execute(
+                "UPDATE coverage_gaps SET dropped_event_count = dropped_event_count + ? "
+                "WHERE id = ?",
+                (dropped_event_count, existing[0]),
+            )
+        else:
+            self._connection.execute(
+                "INSERT INTO coverage_gaps "
+                "(started_at, ended_at, category, reason, dropped_event_count) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    recorded_at.isoformat(),
+                    recorded_at.isoformat() if closed else None,
+                    category.value,
+                    _GAP_REASONS[category],
+                    dropped_event_count,
+                ),
+            )
+        excess = (
+            int(self._connection.execute("SELECT COUNT(*) FROM coverage_gaps").fetchone()[0])
+            - MAX_COVERAGE_GAPS
+        )
+        if excess > 0:
+            self._connection.execute(
+                "DELETE FROM coverage_gaps WHERE id IN ("
+                "SELECT id FROM coverage_gaps WHERE ended_at IS NOT NULL "
+                "ORDER BY id LIMIT ?)",
+                (excess,),
+            )
+
+    def _close_storage_gaps(self, recorded_at: datetime) -> None:
+        self._connection.execute(
+            "UPDATE coverage_gaps SET ended_at = ? WHERE ended_at IS NULL AND category IN (?, ?)",
+            (
+                recorded_at.isoformat(),
+                CoverageGapCategory.STORAGE_LIMIT.value,
+                CoverageGapCategory.STORAGE_WRITE_FAILURE.value,
+            ),
+        )
+
+    def _write_gap_sidecar(
+        self,
+        category: CoverageGapCategory,
+        recorded_at: datetime,
+        dropped_event_count: int,
+    ) -> None:
+        if self._gap_sidecar.exists():
+            try:
+                existing = json.loads(self._gap_sidecar.read_text(encoding="utf-8"))
+                if str(existing.get("category")) == category.value:
+                    dropped_event_count += int(existing.get("dropped_event_count", 0))
+                    existing_started_at = datetime.fromisoformat(str(existing["started_at"]))
+                    self._require_aware(existing_started_at, "coverage gap started_at")
+                    recorded_at = min(recorded_at, existing_started_at)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                pass
+        payload = {
+            "category": category.value,
+            "dropped_event_count": dropped_event_count,
+            "started_at": recorded_at.isoformat(),
+        }
+        temporary = self._gap_sidecar.with_name(f".{self._gap_sidecar.name}.tmp")
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self._gap_sidecar)
+            os.chmod(self._gap_sidecar, 0o600)
+            directory = os.open(self._gap_sidecar.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except Exception:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+            raise
+
+    def _import_gap_sidecar(self) -> None:
+        try:
+            details = self._gap_sidecar.lstat()
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
+            raise LocalStorePathError("coverage gap sidecar must be a regular file")
+        if details.st_uid != os.getuid() or details.st_size > 4096:
+            raise LocalStorePathError("coverage gap sidecar is unsafe")
+        try:
+            raw = json.loads(self._gap_sidecar.read_text(encoding="utf-8"))
+            category = CoverageGapCategory(str(raw["category"]))
+            recorded_at = datetime.fromisoformat(str(raw["started_at"]))
+            dropped_event_count = int(raw["dropped_event_count"])
+            self._require_aware(recorded_at, "coverage gap started_at")
+            if dropped_event_count < 0:
+                raise ValueError("negative dropped event count")
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._record_gap(category, recorded_at, dropped_event_count)
+            self._connection.commit()
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, sqlite3.Error) as error:
+            self._connection.rollback()
+            raise LocalStoreIntegrityError("coverage gap sidecar is invalid") from error
+        self._gap_sidecar.unlink()
+        directory = os.open(self._gap_sidecar.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+
+    def _prune_expired_for_space(self, evaluation_time: datetime, bytes_needed: int) -> int:
+        freed = 0
+        for priority in (
+            EventPriority.BULK,
+            EventPriority.OPERATIONAL,
+            EventPriority.SECURITY,
+        ):
+            retention = retention_for(priority)
+            if retention is None:
+                continue
+            cutoff = evaluation_time - retention
+            rows = self._connection.execute(
+                "SELECT sequence, payload_bytes FROM local_events "
+                "WHERE priority = ? AND delivery_state = 'ACKED' AND recorded_at <= ? "
+                "ORDER BY recorded_at, sequence",
+                (priority.value, cutoff.isoformat()),
+            ).fetchall()
+            selected: list[int] = []
+            for sequence, payload_bytes in rows:
+                selected.append(int(sequence))
+                freed += int(payload_bytes)
+                if freed >= bytes_needed:
+                    break
+            if selected:
+                placeholders = ",".join("?" for _ in selected)
+                self._connection.execute(
+                    f"DELETE FROM local_events WHERE sequence IN ({placeholders})",  # noqa: S608
+                    selected,
+                )
+            if freed >= bytes_needed:
+                break
+        return freed
+
     def _insert_event(
         self,
         event: NormalizedEvent,
@@ -288,7 +481,20 @@ class LocalTelemetryStore:
     def enqueue(self, events: list[NormalizedEvent]) -> int:
         try:
             self._connection.execute("BEGIN IMMEDIATE")
-            recorded_at = self._next_recorded_at()
+            clock_time = self._clock()
+            self._require_aware(clock_time, "local telemetry clock")
+            previous_row = self._connection.execute(
+                "SELECT value FROM local_store_metadata WHERE key = 'last_recorded_at'"
+            ).fetchone()
+            previous = datetime.fromisoformat(str(previous_row[0])) if previous_row else None
+            recorded_at = max(clock_time, previous) if previous is not None else clock_time
+            if previous is not None and clock_time < previous:
+                self._record_gap(
+                    CoverageGapCategory.CLOCK_REGRESSION,
+                    recorded_at,
+                    0,
+                    closed=True,
+                )
             unique_new = {event.id: event for event in events}
             backlog = self.count() + self.quarantine_count()
             existing_ids = (
@@ -305,6 +511,12 @@ class LocalTelemetryStore:
                 else set()
             )
             if backlog + len(unique_new.keys() - existing_ids) > self._max_events:
+                self._record_gap(
+                    CoverageGapCategory.STORAGE_LIMIT,
+                    recorded_at,
+                    len(unique_new.keys() - existing_ids),
+                )
+                self._connection.commit()
                 raise LocalStoreCapacityError("local delivery backlog limit reached")
             current_bytes = int(
                 self._connection.execute(
@@ -316,7 +528,17 @@ class LocalTelemetryStore:
                 for event_id, item in unique_new.items()
                 if event_id not in existing_ids
             )
+            overflow = current_bytes + new_bytes - self._max_payload_bytes
+            if overflow > 0:
+                freed = self._prune_expired_for_space(recorded_at, overflow)
+                current_bytes -= freed
             if current_bytes + new_bytes > self._max_payload_bytes:
+                self._record_gap(
+                    CoverageGapCategory.STORAGE_LIMIT,
+                    recorded_at,
+                    len(unique_new.keys() - existing_ids),
+                )
+                self._connection.commit()
                 raise LocalStoreCapacityError("local telemetry payload limit reached")
             inserted = False
             for event in events:
@@ -325,11 +547,165 @@ class LocalTelemetryStore:
                 )
             if inserted:
                 self._record_timestamp(recorded_at)
+                self._close_storage_gaps(recorded_at)
             self._connection.commit()
             return 0
+        except LocalStoreCapacityError:
+            if self._connection.in_transaction:
+                self._connection.rollback()
+            raise
+        except sqlite3.Error as error:
+            self._connection.rollback()
+            try:
+                clock_time = self._clock()
+                self._require_aware(clock_time, "local telemetry clock")
+                self._write_gap_sidecar(
+                    CoverageGapCategory.STORAGE_WRITE_FAILURE,
+                    clock_time,
+                    len({event.id for event in events}),
+                )
+            except (OSError, ValueError):
+                pass
+            raise LocalStoreError("local telemetry write failed") from error
         except Exception:
             self._connection.rollback()
             raise
+
+    def data_status(self) -> LocalDataStatus:
+        rows = self._connection.execute(
+            "SELECT event_type, COUNT(*), COALESCE(SUM(payload_bytes), 0), "
+            "MIN(recorded_at), MAX(recorded_at) FROM local_events "
+            "GROUP BY event_type ORDER BY event_type"
+        ).fetchall()
+        event_types = tuple(
+            LocalEventTypeStats(
+                event_type=str(row[0]),
+                count=int(row[1]),
+                payload_bytes=int(row[2]),
+                oldest_recorded_at=datetime.fromisoformat(str(row[3])),
+                newest_recorded_at=datetime.fromisoformat(str(row[4])),
+            )
+            for row in rows
+        )
+        counts = {
+            str(row[0]): int(row[1])
+            for row in self._connection.execute(
+                "SELECT delivery_state, COUNT(*) FROM local_events GROUP BY delivery_state"
+            ).fetchall()
+        }
+        return LocalDataStatus(
+            policy_version=LOCAL_POLICY_VERSION,
+            schema_version=SCHEMA_VERSION,
+            logical_payload_bytes=sum(item.payload_bytes for item in event_types),
+            database_file_bytes=self._path.stat().st_size,
+            event_count=sum(item.count for item in event_types),
+            pending_count=counts.get(DeliveryState.PENDING.value, 0),
+            acknowledged_count=counts.get(DeliveryState.ACKED.value, 0),
+            quarantined_count=counts.get(DeliveryState.QUARANTINED.value, 0),
+            coverage_gap_count=int(
+                self._connection.execute("SELECT COUNT(*) FROM coverage_gaps").fetchone()[0]
+            ),
+            event_types=event_types,
+        )
+
+    def verify(self) -> LocalVerifyResult:
+        quick_check = self._connection.execute("PRAGMA quick_check").fetchone()
+        if quick_check != ("ok",):
+            return LocalVerifyResult(False, 0, None, "sqlite_quick_check")
+        checked = 0
+        rows = self._connection.execute(
+            "SELECT sequence, event_id, payload, payload_bytes, payload_hash "
+            "FROM local_events ORDER BY sequence"
+        ).fetchall()
+        for sequence, event_id, payload, payload_bytes, payload_hash in rows:
+            try:
+                parsed = NormalizedEvent.model_validate_json(str(payload))
+            except ValidationError:
+                return LocalVerifyResult(False, checked, int(sequence), "payload_parse")
+            if parsed.id != str(event_id):
+                return LocalVerifyResult(False, checked, int(sequence), "event_id_mismatch")
+            if canonical_event_json(parsed) != str(payload):
+                return LocalVerifyResult(False, checked, int(sequence), "noncanonical_payload")
+            if len(str(payload).encode("utf-8")) != int(payload_bytes):
+                return LocalVerifyResult(False, checked, int(sequence), "payload_size_mismatch")
+            if calculate_payload_hash(str(payload)) != str(payload_hash):
+                return LocalVerifyResult(False, checked, int(sequence), "payload_hash_mismatch")
+            checked += 1
+        return LocalVerifyResult(True, checked, None, None)
+
+    def dry_run(self, evaluation_time: datetime) -> LocalPruneReport:
+        self._require_aware(evaluation_time, "evaluation_time")
+        rules: list[LocalPruneRuleReport] = []
+        for priority in (
+            EventPriority.BULK,
+            EventPriority.OPERATIONAL,
+            EventPriority.SECURITY,
+        ):
+            retention = retention_for(priority)
+            if retention is None:
+                continue
+            cutoff = evaluation_time - retention
+            row = self._connection.execute(
+                "SELECT COUNT(*), COALESCE(SUM(payload_bytes), 0) FROM local_events "
+                "WHERE priority = ? AND delivery_state = 'ACKED' AND recorded_at <= ?",
+                (priority.value, cutoff.isoformat()),
+            ).fetchone()
+            rules.append(
+                LocalPruneRuleReport(
+                    priority=priority,
+                    cutoff=cutoff,
+                    eligible_events=int(row[0]),
+                    eligible_payload_bytes=int(row[1]),
+                )
+            )
+        return LocalPruneReport(LOCAL_POLICY_VERSION, evaluation_time, tuple(rules))
+
+    def prune(self, evaluation_time: datetime, batch_size: int = 1000) -> LocalPruneResult:
+        self._require_aware(evaluation_time, "evaluation_time")
+        if not 1 <= batch_size <= 1000:
+            raise ValueError("batch_size must be between 1 and 1000")
+        deleted_events = 0
+        deleted_payload_bytes = 0
+        for priority in (
+            EventPriority.BULK,
+            EventPriority.OPERATIONAL,
+            EventPriority.SECURITY,
+        ):
+            retention = retention_for(priority)
+            if retention is None:
+                continue
+            cutoff = evaluation_time - retention
+            while True:
+                try:
+                    self._connection.execute("BEGIN IMMEDIATE")
+                    rows = self._connection.execute(
+                        "SELECT sequence, payload_bytes FROM local_events "
+                        "WHERE priority = ? AND delivery_state = 'ACKED' "
+                        "AND recorded_at <= ? ORDER BY recorded_at, sequence LIMIT ?",
+                        (priority.value, cutoff.isoformat(), batch_size),
+                    ).fetchall()
+                    if not rows:
+                        self._connection.commit()
+                        break
+                    sequences = [int(row[0]) for row in rows]
+                    placeholders = ",".join("?" for _ in sequences)
+                    self._connection.execute(
+                        f"DELETE FROM local_events WHERE sequence IN ({placeholders})",  # noqa: S608
+                        sequences,
+                    )
+                    self._connection.commit()
+                    deleted_events += len(rows)
+                    deleted_payload_bytes += sum(int(row[1]) for row in rows)
+                except sqlite3.Error as error:
+                    self._connection.rollback()
+                    raise LocalStoreError("local telemetry prune failed") from error
+        return LocalPruneResult(
+            LOCAL_POLICY_VERSION,
+            evaluation_time,
+            deleted_events,
+            deleted_payload_bytes,
+            True,
+        )
 
     def peek(self, limit: int) -> list[NormalizedEvent]:
         rows = self._connection.execute(
@@ -337,7 +713,12 @@ class LocalTelemetryStore:
             "ORDER BY sequence LIMIT ?",
             (limit,),
         ).fetchall()
-        return [NormalizedEvent.model_validate_json(row[0]) for row in rows]
+        try:
+            return [NormalizedEvent.model_validate_json(row[0]) for row in rows]
+        except ValidationError as error:
+            raise LocalStoreIntegrityError(
+                "pending local telemetry payload is malformed"
+            ) from error
 
     def acknowledge(self, event_ids: list[str]) -> None:
         if not event_ids:
@@ -352,9 +733,9 @@ class LocalTelemetryStore:
                 (acknowledged_at, *event_ids),
             )
             self._connection.commit()
-        except Exception:
+        except sqlite3.Error as error:
             self._connection.rollback()
-            raise
+            raise LocalStoreError("local acknowledgement update failed") from error
 
     def quarantine(self, event_ids: list[str], reason: str) -> None:
         if not event_ids:
@@ -371,9 +752,9 @@ class LocalTelemetryStore:
                 (reason, *event_ids),
             )
             self._connection.commit()
-        except Exception:
+        except sqlite3.Error as error:
             self._connection.rollback()
-            raise
+            raise LocalStoreError("local quarantine update failed") from error
 
     def delivery_state(self, event_id: str) -> DeliveryState | None:
         row = self._connection.execute(
