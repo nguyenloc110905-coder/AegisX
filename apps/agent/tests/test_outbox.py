@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from aegisx_agent.events import NormalizedEvent
+from aegisx_agent.local_store import LocalStoreCapacityError
 from aegisx_agent.outbox import AsyncOutbox, Outbox
 
 
@@ -35,7 +36,7 @@ def test_outbox_persists_events_across_instances(tmp_path: Path) -> None:
     second.close()
 
 
-def test_outbox_evicts_oldest_when_bound_is_exceeded(tmp_path: Path) -> None:
+def test_outbox_refuses_capacity_overflow_without_evicting_evidence(tmp_path: Path) -> None:
     outbox = Outbox(tmp_path / "outbox.sqlite3", max_events=2)
     events = [
         event("00000000-0000-0000-0000-000000000001"),
@@ -43,10 +44,12 @@ def test_outbox_evicts_oldest_when_bound_is_exceeded(tmp_path: Path) -> None:
         event("00000000-0000-0000-0000-000000000003"),
     ]
 
-    evicted = outbox.enqueue(events)
+    outbox.enqueue(events[:2])
 
-    assert evicted == 1
-    assert [item.id for item in outbox.peek(10)] == [events[1].id, events[2].id]
+    with pytest.raises(LocalStoreCapacityError):
+        outbox.enqueue([events[2]])
+
+    assert [item.id for item in outbox.peek(10)] == [events[0].id, events[1].id]
     outbox.close()
 
 
