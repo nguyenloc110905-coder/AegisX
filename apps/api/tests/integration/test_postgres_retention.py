@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from aegisx_api.config import Settings
 from aegisx_api.main import create_app
-from aegisx_api.maintenance.retention_service import RetentionService
+from aegisx_api.maintenance.retention_service import RetentionPruneError, RetentionService
 from aegisx_api.models.correlation import CorrelationCandidate
 from aegisx_api.models.detection import Detection
 from aegisx_api.models.device import Device
@@ -235,3 +235,80 @@ async def test_prune_deletes_only_expired_unprotected_evidence_and_is_idempotent
             assert await session.get(CorrelationCandidate, candidate_id) is not None
             await session.delete(await session.get(Device, device_id))
             await session.commit()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_prune_rolls_back_detection_delete_when_event_delete_fails() -> None:
+    database_url = os.getenv("AEGISX_TEST_POSTGRES_URL")
+    if database_url is None:
+        pytest.skip("AEGISX_TEST_POSTGRES_URL is not configured")
+
+    evaluation_time = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    old = evaluation_time - timedelta(days=31)
+    app = create_app(Settings(_env_file=None, environment="test", database_url=database_url))
+    function_name = f"retention_block_{uuid4().hex}"
+    trigger_name = f"retention_trigger_{uuid4().hex}"
+
+    async with app.router.lifespan_context(app):
+        async with app.state.session_factory() as session:
+            device = Device(
+                external_id=f"retention-rollback-{uuid4()}",
+                name="Retention rollback device",
+                os="Linux",
+                os_version="test",
+                kernel="test",
+                architecture="x86_64",
+                token_digest=hashlib.sha256(str(uuid4()).encode()).hexdigest(),
+            )
+            session.add(device)
+            await session.flush()
+            expired = _event(device.id, "process.started", old)
+            detection = _detection(device.id, expired, "ROLLBACK_STANDALONE")
+            session.add_all([expired, detection])
+            await session.commit()
+            device_id = device.id
+            event_id = expired.id
+            detection_id = detection.id
+
+        async with app.state.session_factory() as session:
+            await session.execute(
+                text(
+                    f"""
+                    CREATE FUNCTION {function_name}() RETURNS trigger AS $$
+                    BEGIN
+                        IF OLD.id = '{event_id}'::uuid THEN
+                            RAISE EXCEPTION 'forced retention event delete failure';
+                        END IF;
+                        RETURN OLD;
+                    END;
+                    $$ LANGUAGE plpgsql
+                    """
+                )
+            )
+            await session.execute(
+                text(
+                    f"CREATE TRIGGER {trigger_name} BEFORE DELETE ON events "
+                    f"FOR EACH ROW EXECUTE FUNCTION {function_name}()"
+                )
+            )
+            await session.commit()
+
+        try:
+            service = RetentionService(app.state.session_factory)
+            with pytest.raises(RetentionPruneError) as raised:
+                await service.prune(evaluation_time)
+
+            assert raised.value.deleted_events == 0
+            assert raised.value.deleted_detections == 0
+            async with app.state.session_factory() as session:
+                assert await session.get(Event, event_id) is not None
+                assert await session.get(Detection, detection_id) is not None
+        finally:
+            async with app.state.session_factory() as session:
+                await session.execute(text(f"DROP TRIGGER {trigger_name} ON events"))
+                await session.execute(text(f"DROP FUNCTION {function_name}()"))
+                await session.commit()
+            async with app.state.session_factory() as session:
+                await session.delete(await session.get(Device, device_id))
+                await session.commit()
