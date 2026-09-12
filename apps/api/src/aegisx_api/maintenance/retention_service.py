@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Select, and_, exists, func, not_, or_, select
+from sqlalchemy import Select, and_, delete, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -13,6 +13,7 @@ from aegisx_api.maintenance.types import (
     DataStatus,
     EventTypeStats,
     PruneReport,
+    PruneResult,
     PruneRuleReport,
 )
 from aegisx_api.models.correlation import (
@@ -63,6 +64,20 @@ def _event_is_protected() -> ColumnElement[bool]:
 
 async def _count(session: AsyncSession, statement: Select[tuple[int]]) -> int:
     return int(await session.scalar(statement) or 0)
+
+
+class RetentionPruneError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        deleted_events: int,
+        deleted_detections: int,
+        failure_category: str,
+    ) -> None:
+        super().__init__(f"retention prune failed: {failure_category}")
+        self.deleted_events = deleted_events
+        self.deleted_detections = deleted_detections
+        self.failure_category = failure_category
 
 
 class RetentionService:
@@ -147,3 +162,80 @@ class RetentionService:
             evaluation_time=evaluation_time,
             rules=tuple(reports),
         )
+
+    async def prune(self, evaluation_time: datetime, batch_size: int = 1000) -> PruneResult:
+        if batch_size < 1 or batch_size > 1000:
+            raise ValueError("batch_size must be between 1 and 1000")
+        cutoff_for(RETENTION_RULES[0], evaluation_time)
+        deleted_events = 0
+        deleted_detections = 0
+        try:
+            for rule in RETENTION_RULES:
+                cutoff = cutoff_for(rule, evaluation_time)
+                while True:
+                    batch_events, batch_detections = await self._prune_batch(
+                        event_type=rule.event_type,
+                        cutoff=cutoff,
+                        batch_size=batch_size,
+                    )
+                    deleted_events += batch_events
+                    deleted_detections += batch_detections
+                    if batch_events == 0:
+                        break
+        except Exception as error:
+            raise RetentionPruneError(
+                deleted_events=deleted_events,
+                deleted_detections=deleted_detections,
+                failure_category=type(error).__name__,
+            ) from error
+        return PruneResult(
+            policy_version=RETENTION_POLICY_VERSION,
+            evaluation_time=evaluation_time,
+            deleted_events=deleted_events,
+            deleted_detections=deleted_detections,
+            completed=True,
+        )
+
+    async def _prune_batch(
+        self,
+        *,
+        event_type: str,
+        cutoff: datetime,
+        batch_size: int,
+    ) -> tuple[int, int]:
+        async with self._session_factory() as session:
+            async with session.begin():
+                selected_ids = tuple(
+                    (
+                        await session.scalars(
+                            select(Event.id)
+                            .where(
+                                Event.event_type == event_type,
+                                Event.ingested_at <= cutoff,
+                                not_(_event_is_protected()),
+                            )
+                            .order_by(Event.ingested_at, Event.id)
+                            .limit(batch_size)
+                            .with_for_update(skip_locked=True)
+                        )
+                    ).all()
+                )
+                if not selected_ids:
+                    return 0, 0
+                deleted_detection_ids = tuple(
+                    (
+                        await session.scalars(
+                            delete(Detection)
+                            .where(Detection.source_event_id.in_(selected_ids))
+                            .returning(Detection.id)
+                        )
+                    ).all()
+                )
+                deleted_event_ids = tuple(
+                    (
+                        await session.scalars(
+                            delete(Event).where(Event.id.in_(selected_ids)).returning(Event.id)
+                        )
+                    ).all()
+                )
+            return len(deleted_event_ids), len(deleted_detection_ids)

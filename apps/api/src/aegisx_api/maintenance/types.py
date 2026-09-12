@@ -92,3 +92,19 @@ class PruneReport:
     @property
     def deletable_detections(self) -> int:
         return sum(rule.deletable_detections for rule in self.rules)
+
+
+@dataclass(frozen=True, slots=True)
+class PruneResult:
+    policy_version: int
+    evaluation_time: datetime
+    deleted_events: int
+    deleted_detections: int
+    completed: bool
+
+    def __post_init__(self) -> None:
+        _require_aware(self.evaluation_time, "evaluation_time")
+        _require_non_negative(
+            deleted_events=self.deleted_events,
+            deleted_detections=self.deleted_detections,
+        )
