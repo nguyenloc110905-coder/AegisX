@@ -84,6 +84,27 @@ def test_acknowledge_keeps_journal_evidence_outside_delivery_view(tmp_path: Path
     assert store.peek(10) == []
     assert store.count() == 0
     assert store.delivery_state(item.id) is DeliveryState.ACKED
+
+    store.acknowledge([item.id, SECOND_ID])
+    assert store.delivery_state(item.id) is DeliveryState.ACKED
+    store.close()
+
+
+def test_acknowledge_rolls_back_complete_transition_on_sqlite_failure(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "outbox.sqlite3")
+    first = event(FIRST_ID)
+    second = event(SECOND_ID)
+    store.enqueue([first, second])
+    store._connection.execute(
+        "CREATE TRIGGER reject_second_ack BEFORE UPDATE ON local_events "
+        f"WHEN OLD.event_id = '{SECOND_ID}' BEGIN SELECT RAISE(ABORT, 'test'); END"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.acknowledge([first.id, second.id])
+
+    assert store.delivery_state(first.id) is DeliveryState.PENDING
+    assert store.delivery_state(second.id) is DeliveryState.PENDING
     store.close()
 
 

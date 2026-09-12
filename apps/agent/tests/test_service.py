@@ -16,6 +16,7 @@ async def test_periodic_runner_backs_off_and_resets_after_recovery(tmp_path) -> 
                 evicted=0,
                 quarantined=0,
                 delivery_status="deferred",
+                coverage_status="complete",
             ),
             RunResult(
                 accepted=0,
@@ -24,6 +25,7 @@ async def test_periodic_runner_backs_off_and_resets_after_recovery(tmp_path) -> 
                 evicted=0,
                 quarantined=0,
                 delivery_status="deferred",
+                coverage_status="complete",
             ),
             RunResult(
                 accepted=3,
@@ -32,6 +34,7 @@ async def test_periodic_runner_backs_off_and_resets_after_recovery(tmp_path) -> 
                 evicted=0,
                 quarantined=0,
                 delivery_status="delivered",
+                coverage_status="complete",
             ),
         ]
     )

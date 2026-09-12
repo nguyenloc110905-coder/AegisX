@@ -21,7 +21,8 @@ from aegisx_agent.config import AgentSettings
 from aegisx_agent.credentials import AgentCredentials, load_credentials, save_credentials
 from aegisx_agent.events import NormalizedEvent, Observation, normalize_observation
 from aegisx_agent.identity import load_or_create_identity
-from aegisx_agent.outbox import AsyncOutbox
+from aegisx_agent.local_store import LocalStoreError
+from aegisx_agent.outbox import AsyncLocalTelemetryStore
 
 
 class RunResult(BaseModel):
@@ -31,6 +32,7 @@ class RunResult(BaseModel):
     evicted: int
     quarantined: int
     delivery_status: Literal["delivered", "deferred"]
+    coverage_status: Literal["complete", "degraded"]
 
 
 class TelemetryClient(Protocol):
@@ -42,7 +44,7 @@ class TelemetryClient(Protocol):
 async def _deliver_batch(
     client: TelemetryClient,
     token: str,
-    outbox: AsyncOutbox,
+    outbox: AsyncLocalTelemetryStore,
     batch: list[NormalizedEvent],
 ) -> tuple[int, int, int]:
     try:
@@ -87,9 +89,10 @@ async def collect_once(
     identity = load_or_create_identity(settings.state_directory / "identity.json")
     credentials_path = settings.state_directory / "credentials.json"
     credentials = load_credentials(credentials_path)
-    outbox = await AsyncOutbox.open(
+    outbox = await AsyncLocalTelemetryStore.open(
         settings.state_directory / "outbox.sqlite3",
         max_events=settings.max_outbox_events,
+        max_payload_bytes=settings.local_telemetry_max_bytes,
     )
     owned_client = client is None
     resolved_client = client or AegisXClient(
@@ -97,25 +100,41 @@ async def collect_once(
         timeout_seconds=settings.request_timeout_seconds,
     )
     try:
-        resolved_collectors = collectors or [
-            SystemCollector(),
-            ProcessCollector(
-                max_processes=settings.max_processes,
-                state_path=settings.state_directory / "process-state.json",
-                emit_resource_usage=settings.emit_process_resource_usage,
-            ),
-            NetworkCollector(
-                max_connections=settings.max_network_connections,
-                state_path=settings.state_directory / "network-state.json",
-                emit_observations=settings.emit_network_snapshot_observations,
-            ),
-        ]
-        events = [
-            normalize_observation(observation)
-            for collector in resolved_collectors
-            for observation in _flatten(collector.collect())
-        ]
-        evicted = await outbox.enqueue(events)
+        coverage_status: Literal["complete", "degraded"] = (
+            "degraded" if outbox.delivery_only else "complete"
+        )
+        evicted = 0
+        if not outbox.delivery_only:
+            resolved_collectors = collectors or [
+                SystemCollector(),
+                ProcessCollector(
+                    max_processes=settings.max_processes,
+                    state_path=settings.state_directory / "process-state.json",
+                    emit_resource_usage=settings.emit_process_resource_usage,
+                ),
+                NetworkCollector(
+                    max_connections=settings.max_network_connections,
+                    state_path=settings.state_directory / "network-state.json",
+                    emit_observations=settings.emit_network_snapshot_observations,
+                ),
+            ]
+            events = [
+                normalize_observation(observation)
+                for collector in resolved_collectors
+                for observation in _flatten(collector.collect())
+            ]
+            try:
+                evicted = await outbox.enqueue(events)
+            except LocalStoreError:
+                return RunResult(
+                    accepted=0,
+                    duplicates=0,
+                    queued=await outbox.count(),
+                    evicted=0,
+                    quarantined=0,
+                    delivery_status="deferred",
+                    coverage_status="degraded",
+                )
         accepted = 0
         duplicates = 0
         quarantined = 0
@@ -136,6 +155,17 @@ async def collect_once(
                 evicted=evicted,
                 quarantined=quarantined,
                 delivery_status="deferred",
+                coverage_status=coverage_status,
+            )
+        except LocalStoreError:
+            return RunResult(
+                accepted=accepted,
+                duplicates=duplicates,
+                queued=await outbox.count(),
+                evicted=evicted,
+                quarantined=quarantined,
+                delivery_status="deferred",
+                coverage_status="degraded",
             )
         return RunResult(
             accepted=accepted,
@@ -144,6 +174,7 @@ async def collect_once(
             evicted=evicted,
             quarantined=quarantined,
             delivery_status="delivered",
+            coverage_status=coverage_status,
         )
     finally:
         await outbox.close()

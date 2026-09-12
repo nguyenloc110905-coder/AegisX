@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 import threading
 import time
 from datetime import UTC, datetime
@@ -162,3 +163,43 @@ async def test_async_outbox_cancellation_does_not_release_connection_while_worke
         await first
     assert await second == 0
     await outbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_open_falls_back_to_legacy_delivery_only_after_migration_failure(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "outbox.sqlite3"
+    pending = event("00000000-0000-0000-0000-000000000001")
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE pending_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "event_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE quarantined_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "event_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, reason TEXT NOT NULL, "
+            "quarantined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO pending_events (event_id, payload) VALUES (?, ?)",
+            (pending.id, pending.model_dump_json()),
+        )
+        connection.execute(
+            "INSERT INTO quarantined_events (event_id, payload, reason) VALUES (?, ?, ?)",
+            ("00000000-0000-0000-0000-000000000002", "{", "http_422"),
+        )
+
+    outbox = await AsyncOutbox.open(path, max_events=10)
+
+    assert outbox.delivery_only is True
+    assert await outbox.peek(10) == [pending]
+    with pytest.raises(LocalStoreCapacityError, match="delivery-only"):
+        await outbox.enqueue([event("00000000-0000-0000-0000-000000000003")])
+    await outbox.acknowledge([pending.id])
+    assert await outbox.count() == 0
+    await outbox.close()
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM quarantined_events").fetchone() == (1,)
