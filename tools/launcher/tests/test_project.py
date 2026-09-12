@@ -273,6 +273,107 @@ def test_prune_apply_holds_launcher_lock_and_forwards_confirmation(
 
 
 @pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (["local-data-status"], "status"),
+        (["local-verify"], "verify"),
+        (["local-prune", "--dry-run"], "prune:False:False"),
+    ],
+)
+def test_read_only_local_commands_bypass_launcher_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    expected: str,
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    calls: list[str] = []
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def local_data_status(self) -> int:
+            calls.append("status")
+            return 0
+
+        def local_verify(self) -> int:
+            calls.append("verify")
+            return 0
+
+        def local_prune(self, *, apply: bool, confirmed: bool) -> int:
+            calls.append(f"prune:{apply}:{confirmed}")
+            return 0
+
+    class ForbiddenState:
+        @classmethod
+        def default(cls) -> "ForbiddenState":
+            raise AssertionError("read-only local command must not acquire launcher lock")
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", ForbiddenState)
+
+    assert main(arguments) == 0
+    assert calls == [expected]
+
+
+def test_local_prune_apply_requires_yes_before_runtime_or_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+
+    class ForbiddenRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def local_prune(self, *, apply: bool, confirmed: bool) -> int:
+            raise AssertionError("unsafe apply must be refused before runtime")
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", ForbiddenRuntime)
+
+    assert main(["local-prune", "--apply"]) == 2
+
+
+def test_local_prune_confirmed_apply_holds_launcher_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    events: list[str] = []
+
+    class FakeState:
+        @classmethod
+        def default(cls) -> "FakeState":
+            return cls()
+
+        def __enter__(self) -> "FakeState":
+            events.append("state-enter")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("state-exit")
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def local_prune(self, *, apply: bool, confirmed: bool) -> int:
+            events.append(f"prune:{apply}:{confirmed}")
+            return 0
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", FakeState)
+
+    assert main(["local-prune", "--apply", "--yes"]) == 0
+    assert events == ["state-enter", "prune:True:True", "state-exit"]
+
+
+@pytest.mark.parametrize(
     ("arguments", "confirmed"),
     [(["dev-reset"], False), (["dev-reset", "--yes"], True)],
 )

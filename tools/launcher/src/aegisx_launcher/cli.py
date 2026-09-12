@@ -15,7 +15,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("run", "doctor", "stop", "dev-reset", "data-status", "prune"),
+        choices=(
+            "run",
+            "doctor",
+            "stop",
+            "dev-reset",
+            "data-status",
+            "prune",
+            "local-data-status",
+            "local-verify",
+            "local-prune",
+        ),
         default="run",
     )
     parser.add_argument(
@@ -58,17 +68,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         return runtime.stop()
     if arguments.command == "data-status":
         return runtime.data_status()
+    if arguments.command == "local-data-status":
+        return runtime.local_data_status()
+    if arguments.command == "local-verify":
+        return runtime.local_verify()
     if arguments.command == "prune" and not arguments.apply:
         if not arguments.dry_run:
             print("[refused] choose exactly one mode: --dry-run or --apply", file=sys.stderr)
             return 2
         return runtime.prune(apply=False, confirmed=False)
+    if arguments.command == "local-prune" and not arguments.apply:
+        if not arguments.dry_run:
+            print("[refused] choose exactly one mode: --dry-run or --apply", file=sys.stderr)
+            return 2
+        return runtime.local_prune(apply=False, confirmed=False)
+    if arguments.command == "local-prune" and not arguments.yes:
+        print("[refused] local-prune --apply requires --yes", file=sys.stderr)
+        return 2
     try:
         with LauncherState.default():
             if arguments.command == "dev-reset":
                 return runtime.dev_reset(confirmed=arguments.yes)
             if arguments.command == "prune":
                 return runtime.prune(apply=True, confirmed=arguments.yes)
+            if arguments.command == "local-prune":
+                return runtime.local_prune(apply=True, confirmed=arguments.yes)
             return runtime.run(show_ui=not arguments.no_ui)
     except LauncherStateError as error:
         print(f"[failed] {error}", file=sys.stderr)

@@ -291,6 +291,45 @@ class AegisXRuntime:
             ("uv", "run", "--project", "apps/api", "aegisx-maintenance", "prune", *mode)
         )
 
+    def _local_maintenance(self, command: tuple[str, ...]) -> int:
+        if not self._runner.executable_exists("uv"):
+            print("[failed] uv is required; install it from https://docs.astral.sh/uv/")
+            return 1
+        sync = self._runner.run(
+            ("uv", "sync", "--project", "apps/agent", "--all-groups"),
+            cwd=self._root,
+            timeout=900,
+        )
+        if sync.returncode != 0:
+            print(f"[failed] local agent setup failed: {sync.diagnostic()}")
+            return sync.returncode
+        result = self._runner.run(
+            ("uv", "run", "--project", "apps/agent", "aegisx-agent", *command),
+            cwd=self._root,
+            timeout=900,
+        )
+        if result.stdout:
+            print(result.stdout.rstrip())
+        if result.returncode != 0:
+            print(
+                f"[failed] local maintenance exited with code {result.returncode}: "
+                f"{result.diagnostic()}"
+            )
+        return result.returncode
+
+    def local_data_status(self) -> int:
+        return self._local_maintenance(("local-data-status",))
+
+    def local_verify(self) -> int:
+        return self._local_maintenance(("local-verify",))
+
+    def local_prune(self, *, apply: bool, confirmed: bool) -> int:
+        if apply and not confirmed:
+            print("[refused] local-prune --apply requires explicit confirmation: --yes")
+            return 2
+        mode = ("--apply", "--yes") if apply else ("--dry-run",)
+        return self._local_maintenance(("local-prune", *mode))
+
     def run(self, *, show_ui: bool = True) -> int:
         if not self._runner.executable_exists("uv"):
             print("[failed] uv is required; install it from https://docs.astral.sh/uv/")

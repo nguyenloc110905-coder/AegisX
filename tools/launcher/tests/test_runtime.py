@@ -313,6 +313,67 @@ def test_prune_dry_run_stops_postgres_only_when_started_here(tmp_path: Path) -> 
     assert any("stop" in call and "postgres" in call for call in runner.calls)
 
 
+@pytest.mark.parametrize(
+    ("method", "command"),
+    [
+        ("local_data_status", ("local-data-status",)),
+        ("local_verify", ("local-verify",)),
+    ],
+)
+def test_local_read_only_maintenance_never_discovers_compose(
+    tmp_path: Path,
+    method: str,
+    command: tuple[str, ...],
+) -> None:
+    expected = (
+        "uv",
+        "run",
+        "--project",
+        "apps/agent",
+        "aegisx-agent",
+        *command,
+    )
+    runner = FakeRunner(lambda argv: (0, "local result\n", "") if argv == expected else (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, tmp_path / ".env", runner=runner)
+    runtime._providers = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("local maintenance must not discover Compose")
+    )
+
+    assert getattr(runtime, method)() == 0
+    assert expected in runner.calls
+    assert ("uv", "sync", "--project", "apps/agent", "--all-groups") in runner.calls
+
+
+def test_local_prune_forwards_exact_mode_without_compose(tmp_path: Path) -> None:
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, tmp_path / ".env", runner=runner)
+    runtime._providers = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("local maintenance must not discover Compose")
+    )
+
+    assert runtime.local_prune(apply=False, confirmed=False) == 0
+    assert runtime.local_prune(apply=True, confirmed=True) == 0
+    assert (
+        "uv",
+        "run",
+        "--project",
+        "apps/agent",
+        "aegisx-agent",
+        "local-prune",
+        "--dry-run",
+    ) in runner.calls
+    assert (
+        "uv",
+        "run",
+        "--project",
+        "apps/agent",
+        "aegisx-agent",
+        "local-prune",
+        "--apply",
+        "--yes",
+    ) in runner.calls
+
+
 def test_keyboard_interrupt_stops_children_and_started_postgres(tmp_path: Path) -> None:
     runner = FakeRunner(lambda _: (0, "", ""))
     api = FakeProcess([None])
