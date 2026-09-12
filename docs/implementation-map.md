@@ -21,6 +21,9 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OPENED` rules.
 - Deterministic `PROCESS_LISTENER_ACTIVITY` correlation with bounded evidence loading, a configurable inclusive window, relational Candidate evidence, savepoint-isolated failure handling, and one Candidate per canonical process identity.
 - Incident Foundation (Milestone 6A): `Incident`/`IncidentStatusTransition` models, `incident_correlation_candidates`/`incident_detections`/`incident_events` association tables, Alembic migration `0005_incident_foundation`, abstract `IncidentPromotionPolicy`/`IncidentPolicyRegistry`, `IncidentService` with advisory-lock-based promotion, sliding-window attachment, idempotency guard, and audit transitions. No production policy for `PROCESS_LISTENER_ACTIVITY` was added.
+- Data Retention Foundation: versioned Event-family policy, aggregate status/dry-run reporting,
+  Candidate/Incident evidence protection, and explicit batched pruning under migration
+  `0006_event_retention_index`.
 
 ### Partially implemented
 
@@ -66,7 +69,8 @@ AegisX/
 │   │   │       ├── 0002_network_fields.py # Adds indexed network correlation fields.
 │   │   │       ├── 0003_detection_foundation.py # Creates Detection storage.
 │   │   │       ├── 0004_correlation_foundation.py # Creates Candidate and evidence storage.
-│   │   │       └── 0005_incident_foundation.py # Creates Incident and audit/evidence storage.
+│   │   │       ├── 0005_incident_foundation.py # Creates Incident and audit/evidence storage.
+│   │   │       └── 0006_event_retention_index.py # Adds retention cutoff scan index.
 │   │   ├── src/aegisx_api/
 │   │   │   ├── main.py                  # FastAPI factory and module-level ASGI app.
 │   │   │   ├── config.py                # Pydantic API settings.
@@ -75,6 +79,7 @@ AegisX/
 │   │   │   ├── detection/                # Rule contract, registry, engine, scoring, first rules.
 │   │   │   ├── correlation/              # Strategy contract, registry, engine, process/listener strategy.
 │   │   │   ├── incident/                 # Promotion policy abstraction and registry.
+│   │   │   ├── maintenance/              # Versioned retention policy, reports, prune service/CLI.
 │   │   │   ├── services/                 # Transactional ingestion, correlation, and Incident promotion.
 │   │   │   ├── api/
 │   │   │   │   ├── router.py            # Combines health/device/telemetry routers.
@@ -175,7 +180,16 @@ AegisX/
 
 ### Developer launcher
 
-**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies with a 15-minute first-run budget and bounded timeout diagnostics, migrates to Alembic head, waits for API readiness, and supervises the host agent. The default `aegisx run` starts the Textual console in the foreground while API/agent output is suppressed; `--no-ui` retains raw log mode. `aegisx dev-reset --yes` is an explicit development-only, single-instance-guarded Compose-volume reset and preserves host agent state. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
+**Status: implemented.** `tools/launcher/` packages the dependency-free `aegisx` command. It discovers the checkout, selects validated Docker/Podman Compose providers, starts PostgreSQL without deleting volumes, synchronizes dependencies with a 15-minute first-run budget and bounded timeout diagnostics, migrates to Alembic head, waits for API readiness, and supervises the host agent. The default `aegisx run` starts the Textual console in the foreground while API/agent output is suppressed; `--no-ui` retains raw log mode. `aegisx data-status` and `aegisx prune --dry-run` expose read-only retention reports; apply requires `aegisx prune --apply --yes` and the launcher lock. `aegisx dev-reset --yes` is an explicit development-only, single-instance-guarded Compose-volume reset and preserves host agent state. `scripts/install-aegisx` performs the one-time editable installation. Single-instance state is private, atomic, and ownership-checked.
+
+### Data retention
+
+**Status: foundation implemented.** `maintenance/retention_policy.py` classifies ten trusted Event
+types under policy version 1 and fails closed for unknown types. `RetentionService` reports aggregate
+volume and prunes expired unprotected Event/Detection chains in transactions of at most 1,000 Events.
+Direct and Detection-mediated Candidate/Incident evidence is excluded. Age uses server-controlled
+`ingested_at`; cutoff equality is expired. Maintenance is explicit only: there is no scheduler,
+Candidate/Incident deletion, endpoint-local Event store, or `VACUUM FULL`.
 
 ### Terminal Operator Console
 

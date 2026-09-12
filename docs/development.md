@@ -23,6 +23,17 @@ aegisx stop
 AEGISX_COMPOSE_COMMAND='podman compose' aegisx
 ```
 
+Storage inspection and safe retention preview are available without starting the console:
+
+```bash
+aegisx data-status
+aegisx prune --dry-run
+```
+
+Applying the displayed policy is destructive and requires `aegisx prune --apply --yes`. Review the
+dry-run first. Candidate/Incident evidence is protected. Full usage, storage locations, and recovery
+warnings are in [the CLI manual](aegisx-cli-manual.md).
+
 The default agent sends process/network lifecycle transitions plus system status. High-volume
 per-process resource and network snapshot observations are opt-in:
 

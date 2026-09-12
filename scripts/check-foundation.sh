@@ -28,6 +28,7 @@ docs/api.md
 docs/threat-model.md
 docs/validation.md
 docs/development.md
+docs/aegisx-cli-manual.md
 docs/progress.md'
 
 for directory in $required_directories; do
@@ -54,5 +55,13 @@ grep -q '^    image: docker.io/library/postgres:17-alpine$' compose.yaml
 grep -q '^## Current implementation$' README.md
 grep -q '^## Milestone 0 — Repository Foundation$' docs/progress.md
 grep -q '^Status: complete' docs/progress.md
+for command in \
+  'aegisx run' \
+  'aegisx doctor' \
+  'aegisx data-status' \
+  'aegisx prune --dry-run' \
+  'aegisx prune --apply --yes'; do
+  grep -q "$command" docs/aegisx-cli-manual.md
+done
 
 printf '%s\n' 'AegisX foundation checks passed.'

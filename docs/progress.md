@@ -454,3 +454,30 @@ Status: implemented after a clean Fedora 44 installation exposed the portability
 - Remote Fedora verification remains incomplete: PostgreSQL became healthy on
   `127.0.0.1:55432`, but the slow-network launcher retry was stopped when the remote host became
   unavailable and cross-machine testing was deferred.
+
+## Data Retention Foundation
+
+Status: implemented and verified. Development deletion remains intentionally unapproved/unapplied.
+
+- Added immutable retention policy version 1 using server-controlled `Event.ingested_at`: 24 hours
+  for opt-in resource/network observations, 7 days for `system.status`, and 30 days for known
+  process/network transitions. Unknown event types fail closed and are not automatic targets.
+- Added aggregate database/type status and dry-run reports without loading raw payloads or secrets.
+- Protected direct Candidate/Incident Event evidence and Detection-mediated source Events. Apply
+  deletes only expired standalone Detections and Events, in transactions capped at 1,000 Events.
+- Added Alembic `0006_event_retention_index` over `(event_type, ingested_at)`.
+- Added `aegisx data-status`, `aegisx prune --dry-run`, and confirmed
+  `aegisx prune --apply --yes`. Read-only commands do not take the long-running launcher lock;
+  apply does. PostgreSQL is stopped only when the maintenance invocation started it.
+- Added [the new-user CLI manual](aegisx-cli-manual.md). Retention remains explicit/manual; no
+  local-first storage, scheduled deletion, realtime collector, response, AI, or new UI was added.
+- Development read-only proof on 2026-09-12 reported a 307,279,539-byte database with 431,488
+  Events, 35,241 Detections, 6 Candidates, 3 Incidents, and 8 protected Events. The fixed-time
+  dry-run found 409,309 deletable Events and 33,258 standalone Detections; 2 expired Events were
+  protected. No apply command or data deletion was run.
+- Full verification: API `127 passed` with all PostgreSQL tests enabled, including forced
+  Event-delete failure proving the current Detection/Event batch rolls back atomically; agent
+  `47 passed`; launcher `59 passed` with isolated state. API, agent, and launcher Ruff format/check
+  and strict mypy passed on 56, 16, and 7 source files. Alembic current/heads and
+  `0006 -> 0005 -> 0006` round trip passed. Docker Compose and Podman Compose config validation,
+  foundation validation, and `git diff --check` passed.

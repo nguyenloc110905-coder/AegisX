@@ -49,11 +49,14 @@ Useful commands:
 
 ```bash
 aegisx doctor
+aegisx data-status
+aegisx prune --dry-run
 aegisx stop
 aegisx run --no-ui
 ```
 
 `--no-ui` retains the log-oriented mode for headless development and troubleshooting.
+See the [AegisX CLI manual](docs/aegisx-cli-manual.md) before using destructive maintenance commands.
 
 The launcher tries Docker Compose and then rootless Podman Compose. On Podman systems it can start the current user's `podman.socket`; it never escalates privileges or deletes the named database volume. Override provider selection when required:
 
@@ -76,6 +79,7 @@ The next work is telemetry quality, correlation quality, contextual Incident sco
 - Linux/Fedora is the primary target; Windows parity is not part of the initial implementation.
 - All validation must run on owned devices or explicitly authorized lab systems.
 - AegisX does not automatically remediate a host.
-- Host command lines and process metadata may be sensitive and require deliberate retention controls in later milestones.
+- Host command lines and process metadata may be sensitive. Manual, evidence-protecting retention
+  controls are available; scheduled and local-first retention are not implemented.
 - Local Compose defaults are for development only and do not configure production TLS or credential management.
 - The current polling Python agent is a development implementation, not a portable production endpoint agent.
