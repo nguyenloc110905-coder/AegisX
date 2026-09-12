@@ -35,6 +35,7 @@ packages = ["src/aegisx_api"]
 
 [project.scripts]
 aegisx-console = "aegisx_api.console.main:main"
+aegisx-maintenance = "aegisx_api.maintenance.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

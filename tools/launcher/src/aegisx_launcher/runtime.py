@@ -175,17 +175,9 @@ class AegisXRuntime:
             return values[0].strip().lower() if len(values) == 1 else ""
         return "development"
 
-    def run(self, *, show_ui: bool = True) -> int:
-        if not self._runner.executable_exists("uv"):
-            print("[failed] uv is required; install it from https://docs.astral.sh/uv/")
-            return 1
-        providers = self._providers()
-        if not providers:
-            print("[failed] no valid Docker or Podman Compose provider")
-            return 1
-
-        provider: ComposeProvider | None = None
-        postgres_started_here = False
+    def _start_postgres(
+        self, providers: tuple[ComposeProvider, ...]
+    ) -> tuple[ComposeProvider | None, bool]:
         for candidate in providers:
             status = self._runner.run(
                 candidate.argv(
@@ -217,10 +209,8 @@ class AegisXRuntime:
                         timeout=120,
                     )
             if started.returncode == 0:
-                provider = candidate
-                postgres_started_here = not was_running
                 print(f"[ok] PostgreSQL ready via {candidate.name}")
-                break
+                return candidate, not was_running
             if not was_running:
                 self._runner.run(
                     candidate.argv(self._env_file, "stop", "postgres"),
@@ -228,8 +218,90 @@ class AegisXRuntime:
                     timeout=30,
                 )
             print(f"[retry] {candidate.name} could not start PostgreSQL")
+        print("[failed] PostgreSQL could not be started")
+        return None, False
+
+    def _prepare_api(self) -> bool:
+        setup_commands = (
+            ("uv", "sync", "--project", "apps/api", "--all-groups"),
+            (
+                "uv",
+                "run",
+                "--project",
+                "apps/api",
+                "alembic",
+                "-c",
+                "apps/api/alembic.ini",
+                "upgrade",
+                "head",
+            ),
+        )
+        for argv in setup_commands:
+            result = self._runner.run(argv, cwd=self._root, timeout=900)
+            if result.returncode != 0:
+                print(
+                    f"[failed] setup command exited with code {result.returncode}: "
+                    f"{argv[1]} ({result.diagnostic()})"
+                )
+                return False
+        return True
+
+    def _maintenance(self, argv: tuple[str, ...]) -> int:
+        if not self._runner.executable_exists("uv"):
+            print("[failed] uv is required; install it from https://docs.astral.sh/uv/")
+            return 1
+        providers = self._providers()
+        if not providers:
+            print("[failed] no valid Docker or Podman Compose provider")
+            return 1
+        provider, postgres_started_here = self._start_postgres(providers)
         if provider is None:
-            print("[failed] PostgreSQL could not be started")
+            return 1
+        try:
+            if not self._prepare_api():
+                return 1
+            result = self._runner.run(argv, cwd=self._root, timeout=900)
+            if result.stdout:
+                print(result.stdout.rstrip())
+            if result.returncode != 0:
+                print(
+                    f"[failed] maintenance command exited with code {result.returncode}: "
+                    f"{result.diagnostic()}"
+                )
+            return result.returncode
+        finally:
+            if postgres_started_here:
+                self._runner.run(
+                    provider.argv(self._env_file, "stop", "postgres"),
+                    cwd=self._root,
+                    timeout=60,
+                )
+
+    def data_status(self) -> int:
+        return self._maintenance(
+            ("uv", "run", "--project", "apps/api", "aegisx-maintenance", "data-status")
+        )
+
+    def prune(self, *, apply: bool, confirmed: bool) -> int:
+        if apply and not confirmed:
+            print("[refused] prune --apply requires explicit confirmation: --yes")
+            return 2
+        mode = ("--apply", "--yes") if apply else ("--dry-run",)
+        return self._maintenance(
+            ("uv", "run", "--project", "apps/api", "aegisx-maintenance", "prune", *mode)
+        )
+
+    def run(self, *, show_ui: bool = True) -> int:
+        if not self._runner.executable_exists("uv"):
+            print("[failed] uv is required; install it from https://docs.astral.sh/uv/")
+            return 1
+        providers = self._providers()
+        if not providers:
+            print("[failed] no valid Docker or Podman Compose provider")
+            return 1
+
+        provider, postgres_started_here = self._start_postgres(providers)
+        if provider is None:
             return 1
 
         api_process: Process | None = None

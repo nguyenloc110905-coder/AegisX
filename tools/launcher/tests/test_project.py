@@ -199,6 +199,80 @@ def test_run_no_ui_dispatches_log_mode(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [(["data-status"], "data-status"), (["prune", "--dry-run"], "prune:False:False")],
+)
+def test_read_only_maintenance_commands_run_without_launcher_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    expected: str,
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    calls: list[str] = []
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def data_status(self) -> int:
+            calls.append("data-status")
+            return 0
+
+        def prune(self, *, apply: bool, confirmed: bool) -> int:
+            calls.append(f"prune:{apply}:{confirmed}")
+            return 0
+
+    class ForbiddenState:
+        @classmethod
+        def default(cls) -> "ForbiddenState":
+            raise AssertionError("read-only maintenance must not acquire the launcher lock")
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", ForbiddenState)
+
+    assert main(arguments) == 0
+    assert calls == [expected]
+
+
+def test_prune_apply_holds_launcher_lock_and_forwards_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _make_project(tmp_path / "aegisx")
+    (project / ".env.example").write_text("MODE=test\n", encoding="utf-8")
+    events: list[str] = []
+
+    class FakeState:
+        @classmethod
+        def default(cls) -> "FakeState":
+            return cls()
+
+        def __enter__(self) -> "FakeState":
+            events.append("state-enter")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            events.append("state-exit")
+
+    class FakeRuntime:
+        def __init__(self, _root: Path, _env: Path) -> None:
+            pass
+
+        def prune(self, *, apply: bool, confirmed: bool) -> int:
+            events.append(f"prune:{apply}:{confirmed}")
+            return 0
+
+    monkeypatch.setenv("AEGISX_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("aegisx_launcher.cli.AegisXRuntime", FakeRuntime)
+    monkeypatch.setattr("aegisx_launcher.cli.LauncherState", FakeState)
+
+    assert main(["prune", "--apply", "--yes"]) == 0
+    assert events == ["state-enter", "prune:True:True", "state-exit"]
+
+
+@pytest.mark.parametrize(
     ("arguments", "confirmed"),
     [(["dev-reset"], False), (["dev-reset", "--yes"], True)],
 )

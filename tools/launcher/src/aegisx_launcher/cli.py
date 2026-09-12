@@ -15,7 +15,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("run", "doctor", "stop", "dev-reset"),
+        choices=("run", "doctor", "stop", "dev-reset", "data-status", "prune"),
         default="run",
     )
     parser.add_argument(
@@ -27,6 +27,17 @@ def _parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help="confirm destructive development-only operations",
+    )
+    prune_mode = parser.add_mutually_exclusive_group()
+    prune_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show eligible retention data without deleting it",
+    )
+    prune_mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="apply retention deletion (also requires --yes)",
     )
     return parser
 
@@ -45,10 +56,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return runtime.doctor()
     if arguments.command == "stop":
         return runtime.stop()
+    if arguments.command == "data-status":
+        return runtime.data_status()
+    if arguments.command == "prune" and not arguments.apply:
+        if not arguments.dry_run:
+            print("[refused] choose exactly one mode: --dry-run or --apply", file=sys.stderr)
+            return 2
+        return runtime.prune(apply=False, confirmed=False)
     try:
         with LauncherState.default():
             if arguments.command == "dev-reset":
                 return runtime.dev_reset(confirmed=arguments.yes)
+            if arguments.command == "prune":
+                return runtime.prune(apply=True, confirmed=arguments.yes)
             return runtime.run(show_ui=not arguments.no_ui)
     except LauncherStateError as error:
         print(f"[failed] {error}", file=sys.stderr)

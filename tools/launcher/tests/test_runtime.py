@@ -249,6 +249,70 @@ def test_existing_postgres_is_not_stopped_when_child_fails(tmp_path: Path) -> No
     assert agent.terminated
 
 
+def test_data_status_runs_api_maintenance_and_preserves_existing_postgres(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    maintenance = (
+        "uv",
+        "run",
+        "--project",
+        "apps/api",
+        "aegisx-maintenance",
+        "data-status",
+    )
+
+    def command(argv: tuple[str, ...]) -> tuple[int, str, str]:
+        if "ps" in argv:
+            return 0, "postgres\n", ""
+        if argv == maintenance:
+            return 0, "retention status\n", ""
+        return 0, "", ""
+
+    runner = FakeRunner(command)
+    runtime = AegisXRuntime(
+        tmp_path,
+        tmp_path / ".env",
+        runner=runner,
+        providers=(ComposeProvider(("podman", "compose")),),
+    )
+
+    assert runtime.data_status() == 0
+    assert maintenance in runner.calls
+    assert "retention status" in capsys.readouterr().out
+    assert not any("stop" in call and "postgres" in call for call in runner.calls)
+
+
+def test_prune_requires_confirmation_before_starting_dependencies(tmp_path: Path) -> None:
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(tmp_path, tmp_path / ".env", runner=runner, providers=_providers())
+
+    assert runtime.prune(apply=True, confirmed=False) == 2
+    assert runner.calls == []
+
+
+def test_prune_dry_run_stops_postgres_only_when_started_here(tmp_path: Path) -> None:
+    maintenance = (
+        "uv",
+        "run",
+        "--project",
+        "apps/api",
+        "aegisx-maintenance",
+        "prune",
+        "--dry-run",
+    )
+    runner = FakeRunner(lambda _: (0, "", ""))
+    runtime = AegisXRuntime(
+        tmp_path,
+        tmp_path / ".env",
+        runner=runner,
+        providers=(ComposeProvider(("podman", "compose")),),
+    )
+
+    assert runtime.prune(apply=False, confirmed=False) == 0
+    assert maintenance in runner.calls
+    assert any("stop" in call and "postgres" in call for call in runner.calls)
+
+
 def test_keyboard_interrupt_stops_children_and_started_postgres(tmp_path: Path) -> None:
     runner = FakeRunner(lambda _: (0, "", ""))
     api = FakeProcess([None])
@@ -376,10 +440,14 @@ def test_wait_for_readiness_stops_at_deadline() -> None:
     clock = iter([0.0, 0.0, 0.5, 1.0])
     attempts: list[str] = []
 
+    def unavailable(url: str) -> bool:
+        attempts.append(url)
+        return False
+
     result = wait_for_readiness(
         "http://127.0.0.1/ready",
         timeout=1.0,
-        probe=lambda url: attempts.append(url) or False,
+        probe=unavailable,
         sleep=lambda _: None,
         monotonic=lambda: next(clock),
     )
