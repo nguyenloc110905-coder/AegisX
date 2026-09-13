@@ -10,4 +10,22 @@ Default collection is therefore transition-oriented, not realtime prevention. Po
 that begins and ends between snapshots. A quiet cycle means no proved transition under current
 visibility; it does not prove that the host was attack-free.
 
-OS access is isolated behind collector interfaces and normal tests do not require root. Collection writes normalized events to a private bounded SQLite outbox before any network operation. `AsyncOutbox` opens the database and offloads each SQLite operation from the event loop, while one async lock serializes access to the single connection; cancellation waits for an in-flight worker call before releasing that lock. The underlying sequence/UUID constraints and transactions still preserve oldest-first order, idempotency, eviction, quarantine, and offline recovery. Transport and 429/5xx failures leave events queued and trigger bounded exponential backoff. The next successful cycle flushes oldest-first and resets the interval. Invalid 400/422 batches are divided to isolate individual bad events in bounded quarantine; 401/403 never delete queued evidence. Continuous mode emits structured JSON cycle logs without credentials. A packaged systemd unit remains later hardening work.
+OS access is isolated behind collector interfaces and normal tests do not require root. Collection
+writes normalized Events to a private SQLite local journal before any network operation. Schema v2
+keeps a global sequence, canonical payload, SHA-256 checksum, evidence priority, and delivery state.
+Acknowledgement changes `PENDING` to `ACKED` without deleting the Event; permanent 400/422 isolation
+changes it to `QUARANTINED`. Transport and 429/5xx failures leave it `PENDING`. UUID uniqueness and
+oldest-first delivery preserve idempotent retry.
+
+`AsyncLocalTelemetryStore` offloads SQLite work from the event loop and serializes its one connection;
+cancellation waits for an in-flight worker before releasing the lock. Storage pressure prunes only
+expired `ACKED` rows allowed by versioned local retention. It never evicts `PENDING`, `QUARANTINED`,
+unknown, or not-yet-expired security evidence to accept a new batch. A rejected batch produces
+`coverage_status=degraded` and a bounded coverage gap; a private atomic sidecar is the fallback when
+SQLite itself cannot record that gap. On a failed legacy schema migration, the agent delivers existing
+v0 rows only and stops collecting new telemetry until migration can succeed.
+
+`aegisx local-data-status`, `local-verify`, and local prune operate directly on endpoint state without
+Compose or PostgreSQL. The checksum detects accidental corruption but is unsigned and not tamper-proof.
+Selective sync, realtime kernel collection, local Detection, systemd packaging, and Response remain
+future work.

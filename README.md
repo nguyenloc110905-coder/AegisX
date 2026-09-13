@@ -51,6 +51,9 @@ Useful commands:
 aegisx doctor
 aegisx data-status
 aegisx prune --dry-run
+aegisx local-data-status
+aegisx local-verify
+aegisx local-prune --dry-run
 aegisx stop
 aegisx run --no-ui
 ```
@@ -79,7 +82,8 @@ The next work is telemetry quality, correlation quality, contextual Incident sco
 - Linux/Fedora is the primary target; Windows parity is not part of the initial implementation.
 - All validation must run on owned devices or explicitly authorized lab systems.
 - AegisX does not automatically remediate a host.
-- Host command lines and process metadata may be sensitive. Manual, evidence-protecting retention
-  controls are available; scheduled and local-first retention are not implemented.
+- Host command lines and process metadata may be sensitive. The private endpoint journal has
+  evidence-protecting local retention and explicit maintenance controls; selective sync and
+  scheduled server retention are not implemented.
 - Local Compose defaults are for development only and do not configure production TLS or credential management.
 - The current polling Python agent is a development implementation, not a portable production endpoint agent.

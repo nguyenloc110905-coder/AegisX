@@ -1,7 +1,7 @@
 # AegisX Current Implementation Map
 
 This document maps the source code through the verified Milestone 6A Incident Foundation,
-one-command developer bundle, and telemetry signal-quality hardening. It does not treat plans,
+one-command developer bundle, telemetry signal-quality hardening, and the endpoint local journal. It does not treat plans,
 backlogs, or README claims as implementation evidence.
 
 ## 1. Current status
@@ -12,10 +12,12 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 
 - PostgreSQL 17 development service through Compose.
 - FastAPI liveness/readiness, Linux device registration, bearer-token authentication, and typed idempotent telemetry ingestion.
-- Async SQLAlchemy Device/Event/Detection/CorrelationCandidate/Incident persistence and five Alembic migrations.
+- Async SQLAlchemy Device/Event/Detection/CorrelationCandidate/Incident persistence and six Alembic migrations.
 - Linux system snapshots plus process and network transition collectors; high-volume process
   resource and network observation Events are opt-in and disabled by default.
-- Agent normalization, registration, local identity/credential persistence, async-adapted bounded SQLite outbox/quarantine, batching, offline recovery, and periodic execution/backoff.
+- Agent normalization, registration, local identity/credential persistence, async-adapted SQLite
+  Event journal with delivery state/checksum/retention/coverage gaps, batching, offline recovery, and
+  periodic execution/backoff.
 - Schema-version-1 events: system status; process started/exited/resource usage; and network listener/connection observed/opened/closed.
 - FastAPI shutdown disposal and automated real-PostgreSQL Device/Event/Detection/CorrelationCandidate integration coverage.
 - Modular rule registry, rule-agnostic Detection Engine, deterministic scoring, transactional Detection persistence, and `PROCESS_STARTED`/`LISTENER_OPENED` rules.
@@ -24,6 +26,9 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - Data Retention Foundation: versioned Event-family policy, aggregate status/dry-run reporting,
   Candidate/Incident evidence protection, and explicit batched pruning under migration
   `0006_event_retention_index`.
+- Local Telemetry Journal Foundation: schema-v2 in-place legacy migration, append-before-send,
+  persistent `PENDING`/`ACKED`/`QUARANTINED` rows, deterministic priority retention, logical quota,
+  bounded gap reporting, checksum verification, and Docker-free local maintenance commands.
 
 ### Partially implemented
 
@@ -39,17 +44,19 @@ The repository has working foundations, an async FastAPI ingestion backend, Post
 - File, service, persistence, authentication-log, DNS, Wi-Fi, and LAN collectors.
 - Later detection packs, device-level risk aggregation, Incident query/timeline APIs, and response decisions.
 - WebSocket, notifications, web application, attack-validation framework, coverage metrics, and systemd packaging.
-- Device listing/status APIs, event query APIs, incident APIs, retention policy, token rotation/revocation API, TLS deployment, and API container image.
+- Device listing/status APIs, event query APIs, incident APIs, token rotation/revocation API, TLS deployment, and API container image.
+- Selective synchronization, realtime kernel telemetry, local Detection/Correlation/Incident,
+  signed or server-anchored journal integrity, and automatic Response.
 
 ### Verified checks
 
-- API: 109 pytest cases passed with all 17 PostgreSQL integration cases enabled; Ruff
-  format/lint passed; strict mypy passed on 51 source files.
-- Agent: 47 pytest cases passed; Ruff format/lint passed; strict mypy passed on 16 source files.
-- Launcher: 52 pytest cases passed with isolated state; Ruff format/lint passed; strict mypy
+- API: 127 pytest cases passed with PostgreSQL integration enabled; Ruff
+  format/lint passed; strict mypy passed on 56 source files.
+- Agent: 84 pytest cases passed; Ruff format/lint passed; strict mypy passed on 19 source files.
+- Launcher: 67 pytest cases passed with isolated state; Ruff format/lint passed; strict mypy
   passed on 7 source files.
 - PostgreSQL Alembic `upgrade head`, `current`, and `heads` reached the single
-  `0005_incident_foundation (head)` on an isolated database.
+  `0006_event_retention_index (head)` on an isolated database.
 
 ## 2. Important project tree
 
@@ -99,17 +106,20 @@ AegisX/
 │   │   │   └── schemas/
 │   │   │       ├── device.py             # Registration request/response models.
 │   │   │       └── event.py              # Discriminated event payload/envelope models.
-│   │   └── tests/                         # 84 cases (26 incident unit + 58 other) plus 2 PostgreSQL incident integration cases.
+│   │   └── tests/                         # 127 API/unit/PostgreSQL integration cases.
 │   ├── agent/
 │   │   ├── pyproject.toml                # Agent CLI package and quality configuration.
 │   │   ├── src/aegisx_agent/
-│   │   │   ├── cli.py                    # `collect-once` and `run` command entry point.
+│   │   │   ├── cli.py                    # Collection plus local status/verify/prune commands.
 │   │   │   ├── config.py                 # Agent settings and resource bounds.
 │   │   │   ├── identity.py               # Stable private endpoint UUID file.
 │   │   │   ├── credentials.py            # Private API credential persistence.
 │   │   │   ├── events.py                 # Observation/NormalizedEvent and normalizer.
 │   │   │   ├── api_client.py             # Async registration/ingestion HTTP client.
-│   │   │   ├── outbox.py                 # Bounded SQLite pending/quarantine storage.
+│   │   │   ├── local_policy.py           # Event priorities, retention, canonical JSON/checksum.
+│   │   │   ├── local_types.py            # Immutable local status/verify/prune result contracts.
+│   │   │   ├── local_store.py            # Schema-v2 SQLite journal, retention, verification, gaps.
+│   │   │   ├── outbox.py                 # Async adapter and safe v0 delivery-only fallback.
 │   │   │   ├── runner.py                 # Collect, queue, register, deliver, isolate errors.
 │   │   │   ├── service.py                # Periodic loop and exponential backoff.
 │   │   │   ├── logging.py                # Agent JSON logging configuration.
@@ -118,7 +128,7 @@ AegisX/
 │   │   │       ├── system.py             # Host/kernel/uptime/CPU/RAM snapshot.
 │   │   │       ├── process.py            # Bounded process/resource snapshots.
 │   │   │       └── network.py            # Bounded listener/connection snapshots.
-│   │   └── tests/                         # 43 collector/client/outbox/runner tests.
+│   │   └── tests/                         # 84 collector/client/journal/runner/CLI tests.
 │   └── web/README.md                      # Boundary note only; no web source exists.
 ├── packages/shared/README.md              # Boundary note only; no shared package exists.
 └── docs/                                  # Design, progress, backlog, and this source map.
@@ -189,7 +199,8 @@ types under policy version 1 and fails closed for unknown types. `RetentionServi
 volume and prunes expired unprotected Event/Detection chains in transactions of at most 1,000 Events.
 Direct and Detection-mediated Candidate/Incident evidence is excluded. Age uses server-controlled
 `ingested_at`; cutoff equality is expired. Maintenance is explicit only: there is no scheduler,
-Candidate/Incident deletion, endpoint-local Event store, or `VACUUM FULL`.
+Candidate/Incident deletion, or `VACUUM FULL`. This server policy is separate from endpoint-local
+journal retention.
 
 ### Terminal Operator Console
 
@@ -203,11 +214,15 @@ Candidate/Incident deletion, endpoint-local Event store, or `VACUUM FULL`.
 
 The most complete implemented flow is one agent collection cycle through PostgreSQL persistence.
 
-1. `apps/agent/src/aegisx_agent/cli.py` — `main()` parses `collect-once` and constructs `AgentSettings`.
+1. `apps/agent/src/aegisx_agent/cli.py` — `main()` parses collection and local maintenance commands
+   and constructs `AgentSettings`.
 2. `apps/agent/src/aegisx_agent/runner.py` — `collect_once()` loads/creates `identity.json`, loads `credentials.json`, and opens `outbox.sqlite3` under the configured state directory.
 3. `runner.py` — `SystemCollector`, `ProcessCollector`, and `NetworkCollector` read current OS state and return one or more `Observation` values.
 4. `apps/agent/src/aegisx_agent/events.py` — `normalize_observation()` adds event UUID, UTC timestamp, and schema version.
-5. `apps/agent/src/aegisx_agent/outbox.py` — `AsyncOutbox.enqueue()` offloads serialized SQLite work; underlying `Outbox.enqueue()` writes every normalized event before network access and evicts oldest rows above the configured bound.
+5. `apps/agent/src/aegisx_agent/local_store.py` and `outbox.py` — the async adapter commits every
+   normalized Event as `PENDING` before network access. Quota pressure may remove only expired
+   `ACKED` rows allowed by policy; otherwise the complete incoming batch is rejected and coverage is
+   marked degraded. There is no silent oldest-row eviction.
 6. If credentials are missing, `runner.py` builds `DeviceProfile`; `AegisXClient.register()` sends it to `POST /api/v1/devices/register`.
 7. `apps/api/src/aegisx_api/schemas/device.py` validates the registration body. `register_device()` in `api/devices.py` creates a random token, stores only its SHA-256 digest in `Device`, commits, and returns the plaintext token once.
 8. `apps/agent/src/aegisx_agent/credentials.py` — `save_credentials()` stores device ID/token locally with mode `0600`.
@@ -259,7 +274,7 @@ The most complete implemented flow is one agent collection cycle through Postgre
 | WifiCollector | Not implemented | No source file/class. |
 | Normalization | Implemented | `events.py: normalize_observation()`. |
 | API client | Implemented | `api_client.py: AegisXClient`; async register/send/HTTP classification. |
-| Local queue | Implemented | `outbox.py: Outbox`, `AsyncOutbox`; bounded private SQLite pending/quarantine tables with serialized worker-thread access from the async runner. |
+| Local Event journal | Implemented | `local_store.py: LocalTelemetryStore`, `outbox.py: AsyncLocalTelemetryStore`; schema-v2 private SQLite journal with global ordering, delivery states, checksums, retention, quota, verification, and coverage gaps. |
 | Device identity | Implemented | `identity.py: load_or_create_identity()`; stable UUID, exclusive mode-0600 creation. |
 | Credentials | Implemented | `credentials.py`; Pydantic model and no-follow mode-0600 write. |
 | Periodic operation | Implemented | `service.py: run_periodically()`; bounded exponential delay and recovery reset. |

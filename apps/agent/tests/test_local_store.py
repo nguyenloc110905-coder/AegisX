@@ -216,6 +216,23 @@ def test_malformed_legacy_payload_rolls_back_complete_migration(tmp_path: Path) 
         assert "local_events" not in tables
 
 
+def test_legacy_duplicate_uuid_across_states_refuses_lossy_migration(tmp_path: Path) -> None:
+    path = tmp_path / "outbox.sqlite3"
+    _create_legacy_store(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE quarantined_events SET event_id = ?, payload = ?",
+            (FIRST_ID, event(FIRST_ID).model_dump_json()),
+        )
+
+    with pytest.raises(LocalStoreMigrationError, match="legacy migration failed"):
+        make_store(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM pending_events").fetchone() == (1,)
+        assert connection.execute("SELECT COUNT(*) FROM quarantined_events").fetchone() == (1,)
+
+
 def test_verify_reports_valid_rows_and_first_bounded_integrity_failure(tmp_path: Path) -> None:
     store = make_store(tmp_path / "outbox.sqlite3")
     store.enqueue([event(FIRST_ID), event(SECOND_ID)])
@@ -239,6 +256,20 @@ def test_verify_reports_valid_rows_and_first_bounded_integrity_failure(tmp_path:
     assert invalid.failure_category == "payload_hash_mismatch"
     assert FIRST_ID not in repr(invalid)
     assert SECOND_ID not in repr(invalid)
+    store.close()
+
+
+def test_verify_returns_bounded_result_for_invalid_size_metadata(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "outbox.sqlite3")
+    store.enqueue([event(FIRST_ID)])
+    store._connection.execute("UPDATE local_events SET payload_bytes = 'invalid'")
+    store._connection.commit()
+
+    result = store.verify()
+
+    assert result.valid is False
+    assert result.first_bad_sequence == 1
+    assert result.failure_category == "payload_size_mismatch"
     store.close()
 
 
@@ -291,6 +322,22 @@ def test_clock_rollback_keeps_recorded_time_monotonic_and_records_gap(tmp_path: 
     assert rows[0][0] == rows[1][0]
     gaps = store._connection.execute("SELECT category, reason FROM coverage_gaps").fetchall()
     assert gaps == [("CLOCK_REGRESSION", "local clock moved backwards")]
+    store.close()
+
+
+def test_recorded_at_is_normalized_to_utc(tmp_path: Path) -> None:
+    local_time = datetime.fromisoformat("2026-09-12T19:00:00+07:00")
+    store = LocalTelemetryStore(
+        tmp_path / "outbox.sqlite3",
+        max_events=100,
+        max_payload_bytes=1024 * 1024,
+        clock=lambda: local_time,
+    )
+
+    store.enqueue([event(FIRST_ID)])
+
+    recorded = store._connection.execute("SELECT recorded_at FROM local_events").fetchone()[0]
+    assert recorded == "2026-09-12T12:00:00+00:00"
     store.close()
 
 
@@ -395,6 +442,23 @@ def test_write_failure_uses_bounded_sidecar_and_imports_it_after_recovery(
     assert not sidecar.exists()
     assert recovered.data_status().coverage_gap_count == 1
     recovered.close()
+
+
+def test_sidecar_writer_refuses_symlink_without_touching_target(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "outbox.sqlite3")
+    target = tmp_path / "unrelated.json"
+    target.write_text('{"keep":true}', encoding="utf-8")
+    (tmp_path / "coverage-gap.json").symlink_to(target)
+
+    with pytest.raises(LocalStorePathError, match="sidecar"):
+        store._write_gap_sidecar(
+            CoverageGapCategory.STORAGE_WRITE_FAILURE,
+            FIXED_TIME,
+            1,
+        )
+
+    assert target.read_text(encoding="utf-8") == '{"keep":true}'
+    store.close()
 
 
 def test_prune_rolls_back_failed_batch_without_partial_deletion(tmp_path: Path) -> None:

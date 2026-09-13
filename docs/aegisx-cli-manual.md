@@ -45,6 +45,56 @@ Compose PostgreSQL service. Normal stop does not delete its volume.
 
 ## Data status and retention
 
+There are now two separate storage layers:
+
+- **endpoint journal**: the agent first writes each generated Event to private local SQLite;
+- **server evidence**: the unchanged Event is then delivered to PostgreSQL for Detection,
+  CorrelationCandidate, and Incident processing.
+
+Writing locally happens before the network call. If local persistence fails, that Event is not sent
+and the cycle reports degraded coverage. This prevents the server from appearing complete while the
+endpoint copy is missing.
+
+Inspect the endpoint journal without Docker, Podman, API, or PostgreSQL:
+
+```bash
+aegisx local-data-status
+aegisx local-verify
+aegisx local-prune --dry-run
+```
+
+`local-data-status` reports aggregate counts, event types, delivery states, logical payload bytes,
+physical SQLite file bytes, and coverage-gap count. Delivery states mean:
+
+- `PENDING`: safely stored locally but not yet acknowledged by the server;
+- `ACKED`: the server accepted it or reported the same UUID as a duplicate;
+- `QUARANTINED`: the server permanently rejected that individual Event, so automatic retry stopped
+  but the local evidence remains.
+
+`local-verify` parses each Event and checks its UUID, canonical size, and SHA-256 checksum. This finds
+accidental corruption. It is **not a digital signature**: an attacker able to rewrite the database
+can also recompute an unsigned checksum. A future server-anchored/signed checkpoint is required for
+strong tamper evidence.
+
+Local policy version 1 keeps acknowledged data for at least 24 hours (`BULK` observations), 7 days
+(`OPERATIONAL` system status), or 30 days (`SECURITY` process/network transitions). `PENDING`,
+`QUARANTINED`, and unknown/future event types are never automatically pruned. Review first, then use:
+
+```bash
+aegisx local-prune --apply --yes
+```
+
+The 256 MiB default is a logical payload quota, configurable with
+`AEGISX_LOCAL_TELEMETRY_MAX_BYTES`. SQLite's physical file can be larger because of indexes, WAL,
+and reusable pages. Under pressure AegisX removes only already-eligible acknowledged rows, oldest
+low-priority data first. If safe pruning cannot make space, it rejects the whole new batch and records
+a bounded coverage gap instead of silently deleting protected evidence.
+
+For backup, stop the agent first and copy the complete agent state directory, or use SQLite's online
+backup mechanism. Copying only `outbox.sqlite3` while the agent is writing can omit WAL data.
+
+Server-side status and retention still use PostgreSQL:
+
 Inspect aggregate storage first:
 
 ```bash
@@ -93,12 +143,15 @@ Agent state remains on disk. Do not use it as normal cleanup.
   project name according to the Compose provider).
 - Agent state by default: `$HOME/.local/state/aegisx/`.
 - Agent identity and credentials: private files in the agent state directory.
-- Offline pending/quarantine queue: `outbox.sqlite3` in the same directory.
+- Endpoint Event journal and delivery state: `outbox.sqlite3` in the same directory. Directory mode
+  is `0700`; database and fallback coverage-gap file mode is `0600`.
 - Process/network comparison baselines and launcher ownership state: the same private directory.
 
 Set `AEGISX_AGENT_STATE_DIR` to intentionally relocate agent state. Back up both the PostgreSQL
-volume/database and the agent state directory for a complete development recovery point. Current
-telemetry is authoritative in PostgreSQL; local-first Event storage is not implemented yet.
+volume/database and the agent state directory for a complete development recovery point. Local
+Events are an endpoint journal; PostgreSQL remains the authoritative central source for Detection,
+CorrelationCandidate, and Incident records. Selective upload is not implemented: the agent still
+sends the same stored Event stream.
 
 ## Troubleshooting
 
@@ -155,6 +208,11 @@ transitions instead of inventing them. A Detection is a deterministic rule match
 malware attribution. AegisX currently performs no automatic response, isolation, notification, AI
 analysis, or web/desktop UI.
 
-A future packaged endpoint release must bundle or install its runtime and service lifecycle, verify
-signed artifacts, and define local-first storage explicitly. This development bundle still requires
-the source checkout, `uv`, and a working Docker/Podman Compose provider.
+A Detection only says a deterministic rule matched evidence. It cannot directly block a process or
+network connection. Decision/Policy must justify a future action, and a separate future Response
+layer must execute it with approval and audit controls.
+
+A future packaged endpoint release must bundle or install its runtime and service lifecycle and
+verify signed artifacts. This development bundle still requires the source checkout and `uv`;
+server commands additionally require a working Docker/Podman Compose provider, while `local-*`
+commands do not.

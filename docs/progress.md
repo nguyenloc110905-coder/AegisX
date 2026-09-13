@@ -481,3 +481,39 @@ Status: implemented and verified. Development deletion remains intentionally una
   and strict mypy passed on 56, 16, and 7 source files. Alembic current/heads and
   `0006 -> 0005 -> 0006` round trip passed. Docker Compose and Podman Compose config validation,
   foundation validation, and `git diff --check` passed.
+
+## Local Telemetry Journal Foundation
+
+Status: implemented and verified on the feature branch.
+
+- Replaced delivery-only endpoint storage with SQLite schema v2 at the existing
+  `$AEGISX_AGENT_STATE_DIR/outbox.sqlite3` path. Each normalized Event is committed before network
+  delivery with a global sequence, canonical JSON, priority, byte size, SHA-256 checksum, and
+  `PENDING` delivery state.
+- Server acceptance/duplicate acknowledgement changes the local row to `ACKED`; isolated permanent
+  rejection changes it to `QUARANTINED`. Both retain the Event locally. Network failure leaves it
+  `PENDING` for ordered idempotent retry.
+- Added atomic v0 migration. A failed migration leaves the legacy file untouched and enters
+  delivery-only degraded mode: existing valid rows can drain, but new telemetry collection stops so
+  the system cannot pretend coverage is complete.
+- Added local policy version 1: acknowledged BULK data is retained at least 24 hours, OPERATIONAL 7
+  days, and SECURITY 30 days. `PENDING`, `QUARANTINED`, `UNCLASSIFIED`, and not-yet-expired rows are
+  not automatic prune targets. Logical quota pressure uses the same eligibility rules and never
+  silently evicts protected evidence.
+- Added bounded coverage gaps for storage limit, storage write failure, local clock regression, and
+  legacy migration failure categories. An atomic private `coverage-gap.json` sidecar preserves a
+  bounded warning when SQLite cannot record it directly.
+- Added aggregate status, per-row checksum verification, dry-run/apply retention, and top-level
+  commands: `aegisx local-data-status`, `aegisx local-verify`,
+  `aegisx local-prune --dry-run`, and `aegisx local-prune --apply --yes`. These commands do not need
+  Docker, Podman, API, or PostgreSQL.
+- Isolated offline two-cycle CLI demo: 4 Events remained `PENDING`, `local-verify` checked 4/4 as
+  valid, local dry-run found 0 eligible rows, and the exact temporary state directory was removed.
+- This milestone does not implement selective sync, realtime/eBPF collection, local Detection,
+  Decision/Policy, Response/blocking, AI, notifications, or a new UI. The checksum detects accidental
+  corruption but is unsigned and is not claimed to be tamper-proof.
+- Full verification: API `127 passed` against an isolated PostgreSQL database, agent `84 passed`,
+  and launcher `67 passed` with isolated state. API/agent/launcher Ruff format and check passed;
+  strict mypy passed on 56/19/7 source files. Alembic `current` and `heads` both reached the single
+  `0006_event_retention_index (head)`. Docker and Podman Compose config, foundation validation, and
+  `git diff --check` passed.

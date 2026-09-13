@@ -4,6 +4,12 @@ Status: schema version 1 implemented for process, system, and network telemetry.
 
 Every normalized request event contains `id`, `schema_version`, `timestamp`, `event_type`, `source`, `severity_hint`, typed `data`, and bounded `metadata`; the authenticated device supplies `device_id`. Pydantic discriminates payloads by explicit event type. The database promotes PID, PPID, executable, device, type, and timestamp for correlation and stores the remaining validated payload as JSON.
 
+Before network delivery, the endpoint stores the complete normalized Event as canonical JSON in its
+private SQLite journal. The local row adds storage metadata (`sequence`, `recorded_at`, priority,
+payload bytes/checksum, and delivery state) but does not change the Event contract sent to the API.
+`recorded_at` drives local retention; server-controlled `ingested_at` independently drives central
+retention. Selective upload is not implemented.
+
 Implemented version 1 payloads:
 
 - `process.started`: emitted only when a `(PID, create_time)` identity is absent from the previous persisted process baseline. The first collection creates the baseline and does not claim that already-running processes just started.

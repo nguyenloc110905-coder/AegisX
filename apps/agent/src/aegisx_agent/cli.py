@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import sqlite3
 import sys
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -121,7 +122,7 @@ def run_command(
             resolved_settings.max_outbox_events,
             resolved_settings.local_telemetry_max_bytes,
         )
-    except LocalStoreError as error:
+    except (LocalStoreError, OSError, ValueError, sqlite3.Error) as error:
         print(f"[failed] local_store category={type(error).__name__}", file=sys.stderr)
         return 1
     try:
@@ -138,7 +139,7 @@ def run_command(
         else:
             _render_prune_result(store.prune(evaluation_time))
         return 0
-    except LocalStoreError as error:
+    except (LocalStoreError, OSError, ValueError, sqlite3.Error) as error:
         print(f"[failed] local_store category={type(error).__name__}", file=sys.stderr)
         return 1
     finally:

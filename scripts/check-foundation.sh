@@ -60,7 +60,11 @@ for command in \
   'aegisx doctor' \
   'aegisx data-status' \
   'aegisx prune --dry-run' \
-  'aegisx prune --apply --yes'; do
+  'aegisx prune --apply --yes' \
+  'aegisx local-data-status' \
+  'aegisx local-verify' \
+  'aegisx local-prune --dry-run' \
+  'aegisx local-prune --apply --yes'; do
   grep -q "$command" docs/aegisx-cli-manual.md
 done
 

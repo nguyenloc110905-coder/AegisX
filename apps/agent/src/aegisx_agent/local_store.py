@@ -142,6 +142,9 @@ class LocalTelemetryStore:
                     "SELECT event_id, payload, reason FROM quarantined_events ORDER BY sequence"
                 ).fetchall()
             if pending_rows or quarantine_rows:
+                legacy_ids = [str(row[0]) for row in (*pending_rows, *quarantine_rows)]
+                if len(legacy_ids) != len(set(legacy_ids)):
+                    raise ValueError("legacy event UUID occurs in multiple delivery states")
                 now = self._next_recorded_at()
                 self._import_legacy(pending_rows, DeliveryState.PENDING, None, now)
                 self._import_legacy_quarantine(quarantine_rows, now)
@@ -229,6 +232,7 @@ class LocalTelemetryStore:
         now = self._clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("local telemetry clock must return a timezone-aware datetime")
+        now = now.astimezone(UTC)
         row = self._connection.execute(
             "SELECT value FROM local_store_metadata WHERE key = 'last_recorded_at'"
         ).fetchone()
@@ -309,16 +313,28 @@ class LocalTelemetryStore:
         recorded_at: datetime,
         dropped_event_count: int,
     ) -> None:
-        if self._gap_sidecar.exists():
+        try:
+            details = self._gap_sidecar.lstat()
+        except FileNotFoundError:
+            details = None
+        if details is not None:
+            if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
+                raise LocalStorePathError("coverage gap sidecar must be a regular file")
+            if details.st_uid != os.getuid() or details.st_size > 4096:
+                raise LocalStorePathError("coverage gap sidecar is unsafe")
             try:
                 existing = json.loads(self._gap_sidecar.read_text(encoding="utf-8"))
-                if str(existing.get("category")) == category.value:
-                    dropped_event_count += int(existing.get("dropped_event_count", 0))
-                    existing_started_at = datetime.fromisoformat(str(existing["started_at"]))
-                    self._require_aware(existing_started_at, "coverage gap started_at")
+                existing_category = CoverageGapCategory(str(existing["category"]))
+                existing_count = int(existing["dropped_event_count"])
+                existing_started_at = datetime.fromisoformat(str(existing["started_at"]))
+                self._require_aware(existing_started_at, "coverage gap started_at")
+                if existing_count < 0:
+                    raise ValueError("negative dropped event count")
+                if existing_category is category:
+                    dropped_event_count += existing_count
                     recorded_at = min(recorded_at, existing_started_at)
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-                pass
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+                raise LocalStoreIntegrityError("coverage gap sidecar is invalid") from error
         payload = {
             "category": category.value,
             "dropped_event_count": dropped_event_count,
@@ -364,6 +380,7 @@ class LocalTelemetryStore:
             recorded_at = datetime.fromisoformat(str(raw["started_at"]))
             dropped_event_count = int(raw["dropped_event_count"])
             self._require_aware(recorded_at, "coverage gap started_at")
+            recorded_at = recorded_at.astimezone(UTC)
             if dropped_event_count < 0:
                 raise ValueError("negative dropped event count")
             self._connection.execute("BEGIN IMMEDIATE")
@@ -483,6 +500,7 @@ class LocalTelemetryStore:
             self._connection.execute("BEGIN IMMEDIATE")
             clock_time = self._clock()
             self._require_aware(clock_time, "local telemetry clock")
+            clock_time = clock_time.astimezone(UTC)
             previous_row = self._connection.execute(
                 "SELECT value FROM local_store_metadata WHERE key = 'last_recorded_at'"
             ).fetchone()
@@ -559,6 +577,7 @@ class LocalTelemetryStore:
             try:
                 clock_time = self._clock()
                 self._require_aware(clock_time, "local telemetry clock")
+                clock_time = clock_time.astimezone(UTC)
                 self._write_gap_sidecar(
                     CoverageGapCategory.STORAGE_WRITE_FAILURE,
                     clock_time,
@@ -626,7 +645,11 @@ class LocalTelemetryStore:
                 return LocalVerifyResult(False, checked, int(sequence), "event_id_mismatch")
             if canonical_event_json(parsed) != str(payload):
                 return LocalVerifyResult(False, checked, int(sequence), "noncanonical_payload")
-            if len(str(payload).encode("utf-8")) != int(payload_bytes):
+            try:
+                stored_payload_bytes = int(payload_bytes)
+            except (TypeError, ValueError):
+                return LocalVerifyResult(False, checked, int(sequence), "payload_size_mismatch")
+            if len(str(payload).encode("utf-8")) != stored_payload_bytes:
                 return LocalVerifyResult(False, checked, int(sequence), "payload_size_mismatch")
             if calculate_payload_hash(str(payload)) != str(payload_hash):
                 return LocalVerifyResult(False, checked, int(sequence), "payload_hash_mismatch")
@@ -635,6 +658,7 @@ class LocalTelemetryStore:
 
     def dry_run(self, evaluation_time: datetime) -> LocalPruneReport:
         self._require_aware(evaluation_time, "evaluation_time")
+        evaluation_time = evaluation_time.astimezone(UTC)
         rules: list[LocalPruneRuleReport] = []
         for priority in (
             EventPriority.BULK,
@@ -662,6 +686,7 @@ class LocalTelemetryStore:
 
     def prune(self, evaluation_time: datetime, batch_size: int = 1000) -> LocalPruneResult:
         self._require_aware(evaluation_time, "evaluation_time")
+        evaluation_time = evaluation_time.astimezone(UTC)
         if not 1 <= batch_size <= 1000:
             raise ValueError("batch_size must be between 1 and 1000")
         deleted_events = 0
